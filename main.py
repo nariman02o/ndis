@@ -156,16 +156,34 @@ if 'initialized' not in st.session_state:
     st.session_state.initialized = False
     st.session_state.monitoring_active = False
     st.session_state.simulator_running = False
+    st.session_state.attack_active = False
     st.session_state.detection_history = []
     st.session_state.alert_history = []
     st.session_state.pending_alerts = []
     st.session_state.processed_alerts = []
     st.session_state.feedback_data = []
+    st.session_state.traffic_rate_history = []
+    
+    # Set default traffic ratios
+    st.session_state.benign_ratio = 0.8  # 80% benign traffic by default
+    
+    # Initialize stats
+    st.session_state.stats = {
+        'total_packets': 0,
+        'benign_packets': 0,
+        'malicious_packets': 0,
+        'detection_rate': 0,
+        'total_traffic': 0,
+        'alerts_generated': 0,
+        'alerts_confirmed': 0,
+        'alerts_rejected': 0,
+        'current_traffic_rate': 0
+    }
+    # Additional session state variables
     st.session_state.model_initialized = False
     st.session_state.model_retrained = False
     st.session_state.retraining_needed = False
-    st.session_state.benign_ratio = 0.8
-    st.session_state.attack_active = False
+    st.session_state.initialized = True
     st.session_state.current_attack = None
     st.session_state.last_update = datetime.now()
     
@@ -298,7 +316,12 @@ def generate_packet(is_malicious=None):
     """Generate a realistic network packet"""
     # Determine if packet should be malicious based on benign ratio if not specified
     if is_malicious is None:
-        is_malicious = random.random() > st.session_state.benign_ratio
+        # Default benign ratio if not set
+        benign_ratio = 0.8
+        if hasattr(st.session_state, 'benign_ratio'):
+            benign_ratio = st.session_state.benign_ratio
+        
+        is_malicious = random.random() > benign_ratio
     
     # Generate timestamp
     timestamp = datetime.now().isoformat()
@@ -597,7 +620,12 @@ def update_network_data(batch_size=10):
                 is_malicious = random.random() > 0.4  # 60% malicious during attack
             else:
                 # Normal operation
-                is_malicious = random.random() > st.session_state.benign_ratio
+                # Default benign ratio if not set
+                benign_ratio = 0.8
+                if hasattr(st.session_state, 'benign_ratio'):
+                    benign_ratio = st.session_state.benign_ratio
+                
+                is_malicious = random.random() > benign_ratio
                 
             # Generate the packet
             packet = generate_packet(is_malicious=is_malicious)
