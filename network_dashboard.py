@@ -56,15 +56,15 @@ def create_network_dashboard():
     
     with control_col1:
         if not st.session_state.monitoring_active:
-            if st.button("Start Network Monitoring", key="start_network", type="primary"):
+            start_button = st.button("Start Network Monitoring", key="start_network", type="primary")
+            if start_button:
                 st.session_state.monitoring_active = True
                 st.session_state.real_simulator.start_simulation()
-                st.rerun()
         else:
-            if st.button("Stop Network Monitoring", key="stop_network", type="secondary"):
+            stop_button = st.button("Stop Network Monitoring", key="stop_network", type="secondary")
+            if stop_button:
                 st.session_state.monitoring_active = False
                 st.session_state.real_simulator.stop_simulation()
-                st.rerun()
     
     with control_col2:
         simulation_speed = st.slider("Simulation Speed", min_value=1, max_value=10, value=5)
@@ -74,11 +74,21 @@ def create_network_dashboard():
     
     with control_col3:
         attack_types = ['port_scan', 'brute_force', 'ddos', 'data_exfiltration', 'malware_communication']
-        selected_attack = st.selectbox("Simulate Attack", ["None"] + attack_types)
         
-        if st.button("Launch Attack") and selected_attack != "None":
-            st.session_state.real_simulator.start_attack(selected_attack)
-            st.success(f"Simulated {selected_attack} attack started!")
+        # Store attack selection in session state to maintain it between reruns
+        if 'selected_attack' not in st.session_state:
+            st.session_state.selected_attack = "None"
+            
+        selected_attack = st.selectbox("Simulate Attack", ["None"] + attack_types, key="attack_selector")
+        st.session_state.selected_attack = selected_attack
+        
+        launch_attack = st.button("Launch Attack", key="launch_attack_button")
+        if launch_attack and st.session_state.selected_attack != "None":
+            success = st.session_state.real_simulator.start_attack(st.session_state.selected_attack)
+            if success:
+                st.success(f"Simulated {st.session_state.selected_attack} attack started!")
+            else:
+                st.error(f"Failed to start attack simulation. Please start network monitoring first.")
     
     # Dashboard layout with multiple metrics and visualizations
     create_dashboard_metrics()
@@ -89,14 +99,21 @@ def create_network_dashboard():
     
     # Automatically update dashboard if monitoring is active
     if st.session_state.monitoring_active:
-        time_since_update = (datetime.now() - st.session_state.last_update).total_seconds()
+        # Add an auto-refresh mechanism with a button to manually refresh
+        refresh_col1, refresh_col2 = st.columns([3, 1])
+        with refresh_col1:
+            st.write("Dashboard automatically updates every few seconds while monitoring is active.")
         
-        # Update at most once per second
-        if time_since_update >= 1.0:
+        with refresh_col2:
+            if st.button("Refresh Now", key="manual_refresh"):
+                update_dashboard_data()
+                st.session_state.last_update = datetime.now()
+        
+        # Auto-update on timer
+        time_since_update = (datetime.now() - st.session_state.last_update).total_seconds()
+        if time_since_update >= 3.0:  # Update every 3 seconds
             update_dashboard_data()
             st.session_state.last_update = datetime.now()
-            time.sleep(0.1)  # Prevent too rapid updates
-            st.rerun()
 
 def update_dashboard_data():
     """
@@ -121,33 +138,74 @@ def update_dashboard_data():
             if packet.get('is_actually_malicious', False):
                 st.session_state.network_stats['malicious_packets'] += 1
                 
-                # Create alert for highly suspicious packets
-                if random.random() < 0.7:  # 70% chance to generate alert for malicious packets
+                # Create alert for highly suspicious packets (100% for demo purposes)
+                alert = {
+                    'id': len(st.session_state.alert_history) + 1,
+                    'timestamp': packet['timestamp'],
+                    'src_ip': packet['src'],
+                    'dst_ip': packet['dst'],
+                    'protocol': packet['proto'],
+                    'severity': 'High' if random.random() < 0.5 else 'Medium',
+                    'description': get_attack_description(packet),
+                    'packet': packet
+                }
+                st.session_state.alert_history.append(alert)
+                st.session_state.network_stats['alert_count'] += 1
+                
+                # Store in database
+                try:
+                    # Add detection to database
+                    features = []  # In a real implementation, extract features from packet
+                    detection_id = db.add_detection(
+                        packet, features, True, random.uniform(0.8, 0.95))
+                    
+                    # Add alert
+                    db.add_alert(detection_id)
+                    
+                    # Also add to app.py's pending alerts for admin feedback
+                    if 'pending_alerts' in st.session_state:
+                        alert_id = f"alert_{int(time.time())}_{st.session_state.network_stats['alert_count']}"
+                        alert_data = {
+                            "id": alert_id,
+                            "timestamp": datetime.now().isoformat(),
+                            "packet": packet,
+                            "features": features,
+                            "confidence": random.uniform(0.8, 0.95),
+                            "status": "pending"  # pending, confirmed, rejected
+                        }
+                        st.session_state.pending_alerts.append(alert_data)
+                except Exception as e:
+                    print(f"Database error: {str(e)}")
+            else:
+                # Occasionally create false positive alerts (10% chance)
+                if random.random() < 0.1:
+                    severity = 'Medium' if random.random() < 0.8 else 'Low'
                     alert = {
                         'id': len(st.session_state.alert_history) + 1,
                         'timestamp': packet['timestamp'],
                         'src_ip': packet['src'],
                         'dst_ip': packet['dst'],
                         'protocol': packet['proto'],
-                        'severity': 'High' if random.random() < 0.3 else 'Medium',
-                        'description': get_attack_description(packet),
+                        'severity': severity,
+                        'description': f"Unusual traffic pattern from {packet['src']}",
                         'packet': packet
                     }
                     st.session_state.alert_history.append(alert)
                     st.session_state.network_stats['alert_count'] += 1
                     
-                    # Store in database
-                    try:
-                        # Add detection to database
-                        features = []  # In a real implementation, extract features from packet
-                        detection_id = db.add_detection(
-                            packet, features, True, random.uniform(0.8, 0.95))
-                        
-                        # Add alert
-                        db.add_alert(detection_id)
-                    except Exception as e:
-                        print(f"Database error: {str(e)}")
-            else:
+                    # Add to app.py's pending alerts for admin feedback (false positive case)
+                    if 'pending_alerts' in st.session_state:
+                        alert_id = f"alert_{int(time.time())}_{st.session_state.network_stats['alert_count']}"
+                        alert_data = {
+                            "id": alert_id,
+                            "timestamp": datetime.now().isoformat(),
+                            "packet": packet,
+                            "features": [],  # Empty features for demo
+                            "confidence": random.uniform(0.6, 0.8),  # Lower confidence for false positives
+                            "status": "pending"  # pending, confirmed, rejected
+                        }
+                        st.session_state.pending_alerts.append(alert_data)
+                
                 st.session_state.network_stats['benign_packets'] += 1
     
     # Update statistics
