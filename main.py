@@ -256,10 +256,20 @@ def format_bytes(size_bytes):
     """Format bytes to human-readable size"""
     if size_bytes == 0:
         return "0 B"
+    
+    # Instead of using numpy, use standard math
     size_name = ("B", "KB", "MB", "GB", "TB")
-    i = int(np.floor(np.log(size_bytes, 1024)))
-    p = np.power(1024, i)
-    s = round(size_bytes / p, 2)
+    
+    # Calculate the logarithm manually
+    i = 0
+    size_float = float(size_bytes)
+    while size_float >= 1024.0 and i < len(size_name) - 1:
+        size_float /= 1024.0
+        i += 1
+    
+    # Round to 2 decimal places
+    s = round(size_float, 2)
+    
     return f"{s} {size_name[i]}"
 
 def get_service_name(port):
@@ -565,32 +575,66 @@ def generate_alert_for_packet(packet):
 
 def update_network_data(batch_size=10):
     """Update network data with new packets"""
-    new_packets = []
-    
-    # Generate packets
-    for _ in range(batch_size):
-        packet = generate_packet()
-        new_packets.append(packet)
-        st.session_state.detection_history.append(packet)
-        
-        # Limit detection history size
-        if len(st.session_state.detection_history) > 1000:
-            st.session_state.detection_history = st.session_state.detection_history[-1000:]
-        
-        # Update statistics with the new packet
-        update_stats_with_packet(packet)
-        
-        # Generate alert for malicious packets and some false positives
-        if packet.get('is_malicious', False) or (random.random() < 0.05):  # 5% chance for false positives
-            alert = generate_alert_for_packet(packet)
-            st.session_state.alert_history.append(alert)
-            if len(st.session_state.alert_history) > 100:
-                st.session_state.alert_history = st.session_state.alert_history[-100:]
+    try:
+        # Check if key data structures exist in session state
+        if 'detection_history' not in st.session_state:
+            st.session_state.detection_history = []
+        if 'alert_history' not in st.session_state:
+            st.session_state.alert_history = []
+        if 'pending_alerts' not in st.session_state:
+            st.session_state.pending_alerts = []
             
-            # Add to pending alerts
-            st.session_state.pending_alerts.append(alert)
+        # Initialize generated packets array
+        new_packets = []
+        
+        # Generate packets
+        for _ in range(batch_size):
+            # Generate packet with controlled ratio of malicious packets
+            is_malicious = None
+            if hasattr(st.session_state, 'attack_active') and st.session_state.attack_active:
+                # Higher chance of malicious during active attack
+                is_malicious = random.random() > 0.4  # 60% malicious during attack
+            else:
+                # Normal operation
+                is_malicious = random.random() > st.session_state.benign_ratio
+                
+            # Generate the packet
+            packet = generate_packet(is_malicious=is_malicious)
+            new_packets.append(packet)
             
-    return new_packets
+            # Add to detection history
+            st.session_state.detection_history.append(packet)
+            
+            # Limit detection history size
+            if len(st.session_state.detection_history) > 1000:
+                st.session_state.detection_history = st.session_state.detection_history[-1000:]
+            
+            # Update statistics with the new packet
+            update_stats_with_packet(packet)
+            
+            # Generate alert for malicious packets and some false positives
+            if packet.get('is_malicious', False) or (random.random() < 0.05):  # 5% chance for false positives
+                alert = generate_alert_for_packet(packet)
+                
+                # Add to alert history
+                st.session_state.alert_history.append(alert)
+                
+                # Limit alert history size
+                if len(st.session_state.alert_history) > 100:
+                    st.session_state.alert_history = st.session_state.alert_history[-100:]
+                
+                # Add to pending alerts
+                st.session_state.pending_alerts.append(alert)
+                
+                # Update alert count
+                if 'stats' in st.session_state and 'alerts_generated' in st.session_state.stats:
+                    st.session_state.stats['alerts_generated'] += 1
+        
+        # Return the generated packets
+        return new_packets
+    except Exception as e:
+        print(f"Error in update_network_data: {str(e)}")
+        return []
 
 def start_attack(attack_type):
     """Start a simulated attack"""
@@ -725,13 +769,31 @@ with tab1:
     with control_col1:
         if not st.session_state.monitoring_active:
             if st.button("Start Monitoring System", type="primary", key="start_monitor"):
+                # Generate initial batch of packets to show immediate results
+                for _ in range(20):
+                    packet = generate_packet()
+                    st.session_state.detection_history.append(packet)
+                    update_stats_with_packet(packet)
+                    
+                    # Generate some alerts
+                    if packet.get('is_malicious', False) or (random.random() < 0.1):
+                        alert = generate_alert_for_packet(packet)
+                        st.session_state.alert_history.append(alert)
+                        st.session_state.pending_alerts.append(alert)
+                
+                # Start background monitor
                 st.session_state.monitoring_active = True
-                start_simulation()
-                st.success("Monitoring system started. Network traffic is now being analyzed.")
+                success = start_simulation()
+                
+                if success:
+                    st.success("✅ Monitoring system started. Network traffic is now being analyzed.")
+                    st.rerun()  # Refresh to show initial data
+                else:
+                    st.error("❌ Failed to start monitoring system. Please try again.")
         else:
             if st.button("Stop Monitoring System", type="primary", key="stop_monitor"):
                 stop_simulation()
-                st.warning("Monitoring system stopped.")
+                st.warning("⚠️ Monitoring system stopped.")
     
     with control_col2:
         # Allow setting the benign/malicious traffic ratio
