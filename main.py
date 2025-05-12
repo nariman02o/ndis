@@ -634,6 +634,10 @@ def update_network_data(batch_size=10):
                 'alerts_confirmed': 0,
                 'alerts_rejected': 0,
                 'total_traffic': 0,
+                'protocol_distribution': {'tcp': 0, 'udp': 0, 'icmp': 0, 'other': 0},
+                'top_sources': {},
+                'top_destinations': {},
+                'port_distribution': {},
             }
         
         if 'attack_active' not in st.session_state:
@@ -891,13 +895,17 @@ def start_simulation():
     if 'network_entities' not in st.session_state:
         # Create network structure for simulated traffic
         st.session_state.network_entities = {
-            'clients': [f"192.168.1.{i}" for i in range(10, 50)],
+            'internal_subnet': '192.168.1.0/24',
+            'dmz_subnet': '172.16.1.0/24',
+            'external_subnet': '203.0.113.0/24',
             'servers': {
-                'web': {'ip': '172.16.0.10', 'services': [80, 443]},
-                'db': {'ip': '172.16.0.20', 'services': [3306, 5432]},
-                'dns': {'ip': '172.16.0.30', 'services': [53]},
-                'mail': {'ip': '172.16.0.40', 'services': [25, 143, 587]}
-            }
+                'web_server': {'ip': '192.168.1.10', 'ports': [80, 443]},
+                'database': {'ip': '192.168.1.20', 'ports': [3306, 5432]},
+                'mail_server': {'ip': '192.168.1.30', 'ports': [25, 110, 143]},
+                'file_server': {'ip': '192.168.1.40', 'ports': [21, 22]},
+                'dns_server': {'ip': '192.168.1.50', 'ports': [53]},
+            },
+            'clients': [f'192.168.1.{i}' for i in range(100, 200)]
         }
     
     # Set the flag and start the thread

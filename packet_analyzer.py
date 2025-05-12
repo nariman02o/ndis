@@ -3,14 +3,22 @@ import json
 import struct
 from datetime import datetime
 import ipaddress
+import logging
+from fpga_interface import fpga_interface
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("PacketAnalyzer")
 
 class PacketAnalyzer:
     """
     Class for analyzing network packets and extracting features
-    for the reinforcement learning model
+    for the reinforcement learning model with optional FPGA acceleration
     """
     def __init__(self, dpi_engine):
         self.dpi_engine = dpi_engine
+        self.fpga_interface = fpga_interface
+        self.hardware_acceleration = True  # Default to hardware acceleration if available
         # Common ports and their services
         self.common_ports = {
             20: 'ftp_data', 21: 'ftp_control',
