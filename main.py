@@ -680,63 +680,96 @@ def simulation_loop():
     """Background thread for packet simulation"""
     print("Starting network simulation thread...")
     try:
-        # Make sure session state is properly initialized
-        if 'simulator_running' not in st.session_state:
-            st.session_state.simulator_running = False
+        # Set up thread-local storage to prevent StrictConcurrency issues
+        thread_local = threading.local()
+        thread_local.simulator_running = True
+        
+        # Make sure thread can access session state variables safely
+        simulator_running = True
+        attack_active = False
+        last_update_time = time.time()
+        
+        # Use session state values to initialize at thread start
+        if hasattr(st.session_state, 'simulator_running'):
+            simulator_running = st.session_state.simulator_running
+        
+        if hasattr(st.session_state, 'attack_active'):
+            attack_active = st.session_state.attack_active
+            
+        # Exit if simulator is not configured to run
+        if not simulator_running:
             print("Simulator not configured to run. Exiting thread.")
             return
             
-        if 'attack_active' not in st.session_state:
-            st.session_state.attack_active = False
-        
-        if 'last_update_time' not in st.session_state:
-            st.session_state.last_update_time = time.time()
-        
-        print(f"Simulator running status: {st.session_state.simulator_running}")
+        print(f"Thread started with simulator running: {simulator_running}")
             
         # Main simulation loop
-        while st.session_state.simulator_running:
+        while simulator_running:
             try:
+                # Check if we should still be running
+                if hasattr(st.session_state, 'simulator_running'):
+                    simulator_running = st.session_state.simulator_running
+                    if not simulator_running:
+                        print("Simulator was stopped externally. Exiting thread.")
+                        break
+                
+                # Check attack status
+                attack_active = False
+                if hasattr(st.session_state, 'attack_active'):
+                    attack_active = st.session_state.attack_active
+                
                 # Check if attack has ended
-                if (st.session_state.attack_active and 
-                    hasattr(st.session_state, 'attack_info') and 
-                    st.session_state.attack_info is not None and
-                    datetime.now() >= st.session_state.attack_info['end_time']):
-                    print("Attack simulation ending based on duration")
-                    stop_attack()
+                if attack_active and hasattr(st.session_state, 'attack_info') and st.session_state.attack_info is not None:
+                    attack_end_time = st.session_state.attack_info['end_time']
+                    if datetime.now() >= attack_end_time:
+                        print("Attack simulation ending based on duration")
+                        # Note: We can't directly call stop_attack from the thread,
+                        # but we can update the flag and let the main thread handle it
+                        st.session_state.attack_active = False
+                        attack_active = False
                 
                 # Record time before generating packets
                 start_time = time.time()
                 
                 # Generate varying batch sizes for more realistic traffic
                 batch_size = 5
-                if st.session_state.attack_active:
+                if attack_active:
                     # More packets during attack
                     batch_size = random.randint(8, 15)
                 else:
                     # Normal traffic
                     batch_size = random.randint(3, 8)
                 
-                # Generate packet batch
-                packets = update_network_data(batch_size=batch_size)
-                print(f"Generated {len(packets)} new packets in simulation")
+                # Generate packet batch - this function has thread-safe operations
+                try:
+                    packets = update_network_data(batch_size=batch_size)
+                    print(f"Generated {len(packets)} new packets in simulation")
+                except Exception as packet_error:
+                    print(f"Error generating packets: {str(packet_error)}")
+                    packets = []
                 
                 # Update simulation metrics
                 elapsed = time.time() - start_time
                 packets_per_second = batch_size / elapsed if elapsed > 0 else 0
-                st.session_state.last_update_time = time.time()
+                last_update_time = time.time()
                 
                 # Record the packets per second (for metrics)
-                if 'traffic_rate_history' not in st.session_state:
-                    st.session_state.traffic_rate_history = []
-                
-                # Keep only the most recent measurements
-                st.session_state.traffic_rate_history.append(packets_per_second)
-                if len(st.session_state.traffic_rate_history) > 60:  # Keep last minute
-                    st.session_state.traffic_rate_history = st.session_state.traffic_rate_history[-60:]
+                # Need to do this in a thread-safe way
+                if hasattr(st.session_state, 'traffic_rate_history'):
+                    # Make a local copy
+                    traffic_history = list(st.session_state.traffic_rate_history)
+                    # Update local copy
+                    traffic_history.append(packets_per_second)
+                    if len(traffic_history) > 60:  # Keep last minute
+                        traffic_history = traffic_history[-60:]
+                    # Update session state with local copy
+                    st.session_state.traffic_rate_history = traffic_history
+                else:
+                    # Create if doesn't exist
+                    st.session_state.traffic_rate_history = [packets_per_second]
                 
                 # Sleep to simulate realistic packet arrival (varies by traffic type)
-                if st.session_state.attack_active:
+                if attack_active:
                     time.sleep(0.5)  # Faster during attacks
                 else:
                     time.sleep(1.0)  # Normal traffic pace
@@ -747,8 +780,10 @@ def simulation_loop():
     except Exception as e:
         print(f"Error in simulation thread: {str(e)}")
         # Make sure to clean up in case of error
-        st.session_state.simulator_running = False
-        st.session_state.monitoring_active = False
+        if hasattr(st.session_state, 'simulator_running'):
+            st.session_state.simulator_running = False
+        if hasattr(st.session_state, 'monitoring_active'):
+            st.session_state.monitoring_active = False
     
     print("Network simulation thread exiting.")
 
@@ -795,29 +830,64 @@ def start_simulation():
     update_network_data(batch_size=15)
     
     try:
+        # Check that thread isn't already running
+        active_threads = [t.name for t in threading.enumerate() if t.is_alive()]
+        if 'NIDS-Simulator' in active_threads:
+            print("Simulator thread is already running!")
+            return True
+        
         print("Starting background simulation thread...")
-        simulation_thread = threading.Thread(target=simulation_loop)
+        simulation_thread = threading.Thread(target=simulation_loop, name="NIDS-Simulator")
         simulation_thread.daemon = True
         simulation_thread.start()
-        print(f"Simulation thread started: {simulation_thread.name}")
-        return True
+        
+        # Give the thread a moment to initialize
+        time.sleep(0.5)
+        
+        # Verify thread started properly
+        if simulation_thread.is_alive():
+            print(f"Simulation thread started successfully: {simulation_thread.name}")
+            return True
+        else:
+            print("Failed to start simulation thread! Thread is not alive.")
+            st.session_state.simulator_running = False
+            return False
     except Exception as e:
-        st.error(f"Error starting simulation: {str(e)}")
+        import traceback
+        print(f"Error starting simulation: {str(e)}")
+        traceback.print_exc()
         st.session_state.simulator_running = False
         return False
 
 def stop_simulation():
     """Stop the packet simulation"""
+    print("Stopping network simulation...")
+    
     # Make sure session state is properly initialized
     if 'simulator_running' not in st.session_state:
         st.session_state.simulator_running = False
         
     if 'monitoring_active' not in st.session_state:
         st.session_state.monitoring_active = False
+        
+    if 'attack_active' not in st.session_state:
+        st.session_state.attack_active = False
     
-    # Set flags to stop
+    # Set flags to stop all simulation activities
     st.session_state.simulator_running = False
     st.session_state.monitoring_active = False
+    
+    # Stop any active attack
+    if st.session_state.attack_active:
+        st.session_state.attack_active = False
+        print("Stopping active attack simulation")
+    
+    # Check if thread is still running
+    active_threads = [t.name for t in threading.enumerate() if t.is_alive()]
+    if 'NIDS-Simulator' in active_threads:
+        print("Thread still active. It will exit on the next iteration.")
+    else:
+        print("No active simulation threads found.")
 
 # Application Layout
 st.title("🛡️ Network Intrusion Detection System")
@@ -1559,17 +1629,34 @@ with tab3:
                         st.warning("Alert marked for further analysis.")
         
         # Button to clear processed alerts
-        if any(st.session_state[f"confirmed_{alert['id']}"] or st.session_state[f"rejected_{alert['id']}"] 
-              for alert in st.session_state.pending_alerts):
+        processed_alerts_exist = False
+        
+        for alert in st.session_state.pending_alerts:
+            alert_id = f"confirmed_{alert['id']}"
+            reject_id = f"rejected_{alert['id']}"
             
+            if (alert_id in st.session_state and st.session_state[alert_id]) or \
+               (reject_id in st.session_state and st.session_state[reject_id]):
+                processed_alerts_exist = True
+                break
+        
+        if processed_alerts_exist:
             if st.button("Remove Processed Alerts", key="clear_processed_alerts"):
                 # Filter out processed alerts
-                st.session_state.pending_alerts = [
-                    alert for alert in st.session_state.pending_alerts
-                    if not (st.session_state[f"confirmed_{alert['id']}"] or 
-                            st.session_state[f"rejected_{alert['id']}"])
-                ]
+                new_pending_alerts = []
+                for alert in st.session_state.pending_alerts:
+                    alert_id = f"confirmed_{alert['id']}"
+                    reject_id = f"rejected_{alert['id']}"
+                    
+                    if ((alert_id in st.session_state and st.session_state[alert_id]) or 
+                        (reject_id in st.session_state and st.session_state[reject_id])):
+                        # Skip this alert (it's been processed)
+                        pass
+                    else:
+                        # Keep this alert
+                        new_pending_alerts.append(alert)
                 
+                st.session_state.pending_alerts = new_pending_alerts
                 st.success("Processed alerts removed from the queue.")
                 st.rerun()
     
