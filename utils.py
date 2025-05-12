@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime
 import numpy as np
 
-def load_model(model, model_path='model.h5', metadata_path='model_metadata.pkl'):
+def load_model(model, model_path='model.pkl', metadata_path='model_metadata.pkl'):
     """
     Load a trained model and its metadata
     Returns True if successful, False otherwise
@@ -21,7 +21,7 @@ def load_model(model, model_path='model.h5', metadata_path='model_metadata.pkl')
         print(f"Error loading model: {str(e)}")
         return False
 
-def save_model(model, model_path='model.h5', metadata_path='model_metadata.pkl'):
+def save_model(model, model_path='model.pkl', metadata_path='model_metadata.pkl'):
     """
     Save a trained model and its metadata
     Returns True if successful, False otherwise
