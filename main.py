@@ -633,32 +633,70 @@ def stop_attack():
 
 def simulation_loop():
     """Background thread for packet simulation"""
-    while st.session_state.simulator_running:
-        # Check if attack has ended
-        if (st.session_state.attack_active and 
-            hasattr(st.session_state, 'attack_info') and 
-            st.session_state.attack_info is not None and
-            datetime.now() >= st.session_state.attack_info['end_time']):
-            stop_attack()
-        
-        # Generate packet batch
-        update_network_data(batch_size=5)
-        
-        # Sleep to simulate realistic packet arrival
-        time.sleep(1)
+    try:
+        # Make sure session state is properly initialized
+        if 'simulator_running' not in st.session_state:
+            st.session_state.simulator_running = False
+            return
+            
+        if 'attack_active' not in st.session_state:
+            st.session_state.attack_active = False
+            
+        # Main simulation loop
+        while st.session_state.simulator_running:
+            try:
+                # Check if attack has ended
+                if (st.session_state.attack_active and 
+                    hasattr(st.session_state, 'attack_info') and 
+                    st.session_state.attack_info is not None and
+                    datetime.now() >= st.session_state.attack_info['end_time']):
+                    stop_attack()
+                
+                # Generate packet batch
+                update_network_data(batch_size=5)
+                
+                # Sleep to simulate realistic packet arrival
+                time.sleep(1)
+            except Exception as e:
+                print(f"Error in simulation iteration: {str(e)}")
+                time.sleep(2)  # Wait before retrying
+    except Exception as e:
+        print(f"Error in simulation thread: {str(e)}")
+        # Make sure to clean up in case of error
+        st.session_state.simulator_running = False
+        st.session_state.monitoring_active = False
 
 def start_simulation():
     """Start the packet simulation in a background thread"""
+    # Make sure session state is properly initialized
+    if 'simulator_running' not in st.session_state:
+        st.session_state.simulator_running = False
+    
     if st.session_state.simulator_running:
         return
     
+    # Set the flag and start the thread
     st.session_state.simulator_running = True
-    simulation_thread = threading.Thread(target=simulation_loop)
-    simulation_thread.daemon = True
-    simulation_thread.start()
+    try:
+        simulation_thread = threading.Thread(target=simulation_loop)
+        simulation_thread.daemon = True
+        simulation_thread.start()
+        return True
+    except Exception as e:
+        st.error(f"Error starting simulation: {str(e)}")
+        st.session_state.simulator_running = False
+        return False
 
 def stop_simulation():
     """Stop the packet simulation"""
+    # Make sure session state is properly initialized
+    if 'simulator_running' not in st.session_state:
+        st.session_state.simulator_running = False
+        
+    if 'monitoring_active' not in st.session_state:
+        st.session_state.monitoring_active = False
+    
+    # Set flags to stop
     st.session_state.simulator_running = False
     st.session_state.monitoring_active = False
 
