@@ -314,6 +314,22 @@ def get_service_name(port):
 
 def generate_packet(is_malicious=None):
     """Generate a realistic network packet"""
+    # Make sure network entities are initialized with defaults if needed
+    if not hasattr(st.session_state, 'network_entities'):
+        st.session_state.network_entities = {
+            'internal_subnet': '192.168.1.0/24',
+            'dmz_subnet': '172.16.1.0/24',
+            'external_subnet': '203.0.113.0/24',
+            'servers': {
+                'web_server': {'ip': '192.168.1.10', 'ports': [80, 443]},
+                'database': {'ip': '192.168.1.20', 'ports': [3306, 5432]},
+                'mail_server': {'ip': '192.168.1.30', 'ports': [25, 110, 143]},
+                'file_server': {'ip': '192.168.1.40', 'ports': [21, 22]},
+                'dns_server': {'ip': '192.168.1.50', 'ports': [53]},
+            },
+            'clients': [f'192.168.1.{i}' for i in range(100, 200)]
+        }
+    
     # Determine if packet should be malicious based on benign ratio if not specified
     if is_malicious is None:
         # Default benign ratio if not set
@@ -607,6 +623,40 @@ def update_network_data(batch_size=10):
             st.session_state.alert_history = []
         if 'pending_alerts' not in st.session_state:
             st.session_state.pending_alerts = []
+        
+        # Make sure all required session state variables are initialized
+        if 'stats' not in st.session_state:
+            st.session_state.stats = {
+                'total_packets': 0,
+                'benign_packets': 0,
+                'malicious_packets': 0,
+                'alerts_generated': 0,
+                'alerts_confirmed': 0,
+                'alerts_rejected': 0,
+                'total_traffic': 0,
+            }
+        
+        if 'attack_active' not in st.session_state:
+            st.session_state.attack_active = False
+        
+        if 'current_attack' not in st.session_state:
+            st.session_state.current_attack = None
+            
+        # Initialize network entities if not already initialized
+        if 'network_entities' not in st.session_state:
+            st.session_state.network_entities = {
+                'internal_subnet': '192.168.1.0/24',
+                'dmz_subnet': '172.16.1.0/24',
+                'external_subnet': '203.0.113.0/24',
+                'servers': {
+                    'web_server': {'ip': '192.168.1.10', 'ports': [80, 443]},
+                    'database': {'ip': '192.168.1.20', 'ports': [3306, 5432]},
+                    'mail_server': {'ip': '192.168.1.30', 'ports': [25, 110, 143]},
+                    'file_server': {'ip': '192.168.1.40', 'ports': [21, 22]},
+                    'dns_server': {'ip': '192.168.1.50', 'ports': [53]},
+                },
+                'clients': [f'192.168.1.{i}' for i in range(100, 200)]
+            }
             
         # Initialize generated packets array
         new_packets = []
@@ -615,7 +665,7 @@ def update_network_data(batch_size=10):
         for _ in range(batch_size):
             # Generate packet with controlled ratio of malicious packets
             is_malicious = None
-            if hasattr(st.session_state, 'attack_active') and st.session_state.attack_active:
+            if st.session_state.attack_active:
                 # Higher chance of malicious during active attack
                 is_malicious = random.random() > 0.4  # 60% malicious during attack
             else:
