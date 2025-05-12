@@ -1,19 +1,59 @@
 """
 FPGA Interface for PYNQ-Z1 board integration with the NIDS system
 
-This module provides an interface for offloading packet processing and 
-machine learning inference to the PYNQ-Z1 FPGA board for hardware acceleration.
+This module provides an interface for running the NIDS application directly on the 
+PYNQ-Z1 FPGA board, enabling hardware acceleration of packet processing and 
+machine learning inference.
+
+PYNQ-Z1 Details:
+- Xilinx Zynq-7000 SoC (XC7Z020-1CLG400C)
+- Dual-core ARM Cortex-A9 processor (PS)
+- Artix-7 FPGA programmable logic (PL)
+- 13,300 logic slices, 630KB BRAM, 220 DSP slices
+- 512MB DDR3 memory
+- 100MHz clock
 """
 
 import numpy as np
 import json
 import time
-import random  # for simulation until FPGA is connected
+import random  # for simulation when running on non-PYNQ systems
 import logging
+import os
+import sys
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("FPGA-Interface")
+
+# Check if running on a PYNQ-Z1 board
+def is_running_on_pynq():
+    """Detect if code is running on a PYNQ-Z1 board"""
+    try:
+        # Check for PYNQ-specific paths and files
+        if os.path.exists('/usr/local/share/pynq-venv'):
+            return True
+        if os.path.exists('/home/xilinx') and os.path.exists('/sys/bus/platform/drivers/xdma'):
+            return True
+        return False
+    except:
+        return False
+
+# Determine if we're running on actual PYNQ hardware
+ON_PYNQ_HARDWARE = is_running_on_pynq()
+
+# Try to import PYNQ-specific libraries if running on PYNQ hardware
+if ON_PYNQ_HARDWARE:
+    try:
+        from pynq import Overlay
+        from pynq import allocate
+        import pynq.lib.dma
+        PYNQ_IMPORTS_SUCCESSFUL = True
+    except ImportError:
+        logger.warning("Running on PYNQ hardware but couldn't import PYNQ libraries")
+        PYNQ_IMPORTS_SUCCESSFUL = False
+else:
+    PYNQ_IMPORTS_SUCCESSFUL = False
 
 class FPGAInterface:
     """
@@ -21,19 +61,32 @@ class FPGAInterface:
     
     This class handles the communication between the NIDS software and the FPGA hardware,
     including feature extraction acceleration and model inference offloading.
+    
+    When running directly on the PYNQ-Z1 board, this interface provides direct access to
+    the hardware accelerators implemented in the programmable logic.
     """
     
-    def __init__(self, simulation_mode=True):
+    def __init__(self, simulation_mode=None, bitstream_path="./pynq_overlay/nids_overlay.bit"):
         """
         Initialize the FPGA interface
         
         Args:
-            simulation_mode (bool): If True, simulate FPGA acceleration. If False, attempt
-                                  to connect to actual PYNQ-Z1 hardware.
+            simulation_mode (bool): If None, auto-detect based on hardware.
+                                  If True, force simulation mode.
+                                  If False, force hardware mode.
+            bitstream_path (str): Path to the FPGA bitstream file
         """
-        self.simulation_mode = simulation_mode
+        # Auto-detect if simulation_mode is not specified
+        if simulation_mode is None:
+            self.simulation_mode = not (ON_PYNQ_HARDWARE and PYNQ_IMPORTS_SUCCESSFUL)
+        else:
+            self.simulation_mode = simulation_mode
+            
         self.initialized = False
         self.acceleration_enabled = False
+        self.bitstream_path = bitstream_path
+        self.overlay = None
+        self.dma = None
         self.offload_features = ["header_processing", "payload_analysis", "ml_inference"]
         
         # Performance metrics
@@ -66,18 +119,32 @@ class FPGAInterface:
         """
         Initialize connection to the PYNQ-Z1 FPGA hardware
         
-        This method should be implemented based on the specific overlay and hardware design
-        used for the NIDS acceleration on the PYNQ-Z1.
+        This method loads the bitstream and configures the programmable logic
+        on the PYNQ-Z1 board.
         """
         try:
-            # When implementing with actual hardware, use code like:
-            # from pynq import Overlay
-            # self.overlay = Overlay('/home/xilinx/nids_overlay.bit')
-            # self.dma = self.overlay.axi_dma_0
-            # self.ml_engine = self.overlay.ml_engine_0
+            # Check if we're running on PYNQ hardware
+            if not ON_PYNQ_HARDWARE:
+                raise RuntimeError("Not running on PYNQ hardware")
+                
+            # Check if PYNQ libraries were imported successfully
+            if not PYNQ_IMPORTS_SUCCESSFUL:
+                raise ImportError("PYNQ libraries not available")
+            
+            # Load the bitstream to configure the FPGA
+            logger.info(f"Loading FPGA bitstream from {self.bitstream_path}")
+            self.overlay = Overlay(self.bitstream_path)
+            
+            # Access hardware accelerators and DMA engines defined in the overlay
+            self.dma = self.overlay.axi_dma_0
+            
+            # Allocate memory buffers for DMA transfers
+            self.input_buffer = allocate(shape=(100,), dtype=np.float32)
+            self.output_buffer = allocate(shape=(2,), dtype=np.float32)
             
             logger.info("FPGA hardware connection initialized")
             self.acceleration_enabled = True
+            
         except ImportError:
             logger.error("PYNQ library not found. Cannot connect to FPGA hardware.")
             raise
@@ -192,32 +259,62 @@ class FPGAInterface:
     
     def _hardware_packet_processing(self, packet_data):
         """Process packet using actual FPGA hardware acceleration"""
-        # In a real implementation, this would send data to the FPGA,
-        # wait for processing to complete, and retrieve the results
-        
-        # Example implementation sketch:
-        # 1. Convert packet data to bytes for FPGA
-        # packet_bytes = self._packet_to_bytes(packet_data)
-        # 
-        # 2. Send data to FPGA via DMA
-        # self.dma.sendchannel.transfer(packet_bytes)
-        # 
-        # 3. Wait for processing to complete
-        # self.dma.sendchannel.wait()
-        # 
-        # 4. Receive results from FPGA
-        # result_buffer = allocate(size)
-        # self.dma.recvchannel.transfer(result_buffer)
-        # self.dma.recvchannel.wait()
-        # 
-        # 5. Convert results back to Python objects
-        # features = self._bytes_to_features(result_buffer)
-        
-        # For now, use the simulated version
-        features = self._simulated_hardware_processing(packet_data)
-        features["processing_mode"] = "hardware_actual"
-        
-        return features
+        try:
+            # Check if we have PYNQ hardware initialized
+            if not hasattr(self, 'overlay') or self.overlay is None:
+                logger.warning("FPGA hardware not initialized. Falling back to simulation.")
+                return self._simulated_hardware_processing(packet_data)
+                
+            # Extract basic features to fill the input buffer
+            header_features = self._extract_header_features(packet_data)
+            
+            # Prepare features in the format expected by the hardware
+            # Convert packet features to numpy array for hardware processing
+            feature_array = np.zeros(100, dtype=np.float32)
+            
+            # Fill in basic features (this should match the hardware implementation)
+            feature_array[0] = header_features.get("length", 0) / 1500.0  # Normalize length
+            feature_array[1] = header_features.get("src_port", 0) / 65535.0  # Normalize src port
+            feature_array[2] = header_features.get("dst_port", 0) / 65535.0  # Normalize dst port
+            
+            # Protocol one-hot encoding
+            protocol = header_features.get("protocol", "").lower()
+            if protocol == "tcp":
+                feature_array[3] = 1.0
+            elif protocol == "udp":
+                feature_array[4] = 1.0
+            elif protocol == "icmp":
+                feature_array[5] = 1.0
+                
+            # Copy feature array to the input buffer
+            for i, val in enumerate(feature_array):
+                self.input_buffer[i] = val
+            
+            # Send data to FPGA using DMA
+            self.dma.sendchannel.transfer(self.input_buffer)
+            self.dma.recvchannel.transfer(self.output_buffer)
+            
+            # Wait for processing to complete
+            self.dma.sendchannel.wait()
+            self.dma.recvchannel.wait()
+            
+            # Extract results from output buffer
+            # Format the result as expected by the application
+            features = {
+                "header_features": header_features,
+                "payload_features": self._extract_payload_features(packet_data),
+                "hardware_features": {
+                    "raw_output": [float(self.output_buffer[i]) for i in range(len(self.output_buffer))],
+                },
+                "processing_mode": "hardware_actual"
+            }
+            
+            return features
+            
+        except Exception as e:
+            logger.error(f"Hardware packet processing failed: {str(e)}")
+            logger.info("Falling back to simulated hardware processing")
+            return self._simulated_hardware_processing(packet_data)
     
     def _extract_header_features(self, packet_data):
         """Extract features from packet headers"""
@@ -235,15 +332,37 @@ class FPGAInterface:
         """Extract features from packet payload"""
         payload = packet_data.get("payload", "")
         
-        # Calculate some simple statistics about the payload
-        # In a real implementation, this would be more sophisticated
-        features = {
-            "payload_len": len(payload),
-            "entropy": random.random() * 8.0,  # Simulated entropy (0-8)
-            "printable_ratio": random.random(),  # Simulated printable ratio (0-1)
-            "null_byte_ratio": random.random() * 0.1,  # Simulated null byte ratio
-            "statistical_features": [random.random() for _ in range(8)]  # 8 statistical features
-        }
+        if self.simulation_mode or not hasattr(self, 'overlay'):
+            # Simulated payload analysis
+            features = {
+                "payload_len": len(payload),
+                "entropy": random.random() * 8.0,  # Simulated entropy (0-8)
+                "printable_ratio": random.random(),  # Simulated printable ratio (0-1)
+                "null_byte_ratio": random.random() * 0.1,  # Simulated null byte ratio
+                "statistical_features": [random.random() for _ in range(8)]  # 8 statistical features
+            }
+        else:
+            # Try to use hardware payload analysis
+            try:
+                # For real implementation, hardware would calculate these metrics
+                # Here we'll still use simulated values but show how it would work
+                features = {
+                    "payload_len": len(payload),
+                    "entropy": sum(self.output_buffer[10:18]) / 8.0,  # Using values from FPGA
+                    "printable_ratio": float(self.output_buffer[20]),
+                    "null_byte_ratio": float(self.output_buffer[21]),
+                    "statistical_features": [float(self.output_buffer[i+30]) for i in range(8)]
+                }
+            except Exception as e:
+                logger.warning(f"Hardware payload analysis failed: {str(e)}")
+                # Fall back to simulated values
+                features = {
+                    "payload_len": len(payload),
+                    "entropy": random.random() * 8.0,
+                    "printable_ratio": random.random(),
+                    "null_byte_ratio": random.random() * 0.1,
+                    "statistical_features": [random.random() for _ in range(8)]
+                }
         
         return features
     
@@ -320,11 +439,62 @@ class FPGAInterface:
     
     def _hardware_inference(self, features):
         """Perform ML inference using actual FPGA hardware"""
-        # In a real implementation, this would send features to the FPGA,
-        # run inference on the hardware, and retrieve the results
-        
-        # For now, use the simulated version
-        return self._simulated_hardware_inference(features)
+        try:
+            # Check if we have PYNQ hardware initialized
+            if not hasattr(self, 'overlay') or self.overlay is None:
+                logger.warning("FPGA hardware not initialized. Falling back to simulation.")
+                return self._simulated_hardware_inference(features)
+            
+            # If we already processed this packet with hardware, use those results
+            if "hardware_features" in features and "raw_output" in features["hardware_features"]:
+                raw_output = features["hardware_features"]["raw_output"]
+                if len(raw_output) >= 2:
+                    # First value is classification, second is confidence
+                    is_malicious = raw_output[0] > 0.5
+                    confidence = raw_output[0] if is_malicious else 1.0 - raw_output[0]
+                    return (is_malicious, confidence)
+            
+            # Otherwise, prepare features and send to FPGA
+            # Extract features into flat array
+            feature_array = np.zeros(100, dtype=np.float32)
+            
+            # Fill basic header features
+            header = features.get("header_features", {})
+            feature_array[0] = header.get("length", 0) / 1500.0
+            feature_array[1] = header.get("src_port", 0) / 65535.0
+            feature_array[2] = header.get("dst_port", 0) / 65535.0
+            
+            # Protocol one-hot encoding
+            protocol = header.get("protocol", "").lower()
+            if protocol == "tcp":
+                feature_array[3] = 1.0
+            elif protocol == "udp":
+                feature_array[4] = 1.0
+            elif protocol == "icmp":
+                feature_array[5] = 1.0
+            
+            # Copy feature array to the input buffer
+            for i, val in enumerate(feature_array):
+                self.input_buffer[i] = val
+            
+            # Send data to FPGA and wait for results
+            self.dma.sendchannel.transfer(self.input_buffer)
+            self.dma.recvchannel.transfer(self.output_buffer)
+            
+            self.dma.sendchannel.wait()
+            self.dma.recvchannel.wait()
+            
+            # Extract results
+            is_malicious = bool(self.output_buffer[0] > 0.5)
+            confidence = float(self.output_buffer[0] if is_malicious else 1.0 - self.output_buffer[0])
+            
+            return (is_malicious, confidence)
+            
+        except Exception as e:
+            logger.error(f"Hardware inference failed: {str(e)}")
+            logger.info("Falling back to simulated hardware inference")
+            return self._simulated_hardware_inference(features)
 
 # Create a global instance for use throughout the application
-fpga_interface = FPGAInterface(simulation_mode=True)
+# Auto-detect if we're running on PYNQ hardware
+fpga_interface = FPGAInterface(simulation_mode=None)

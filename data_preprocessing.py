@@ -3,7 +3,6 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, OneHotEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.impute import SimpleImputer
-import os
 import pickle
 
 class DataPreprocessor:
