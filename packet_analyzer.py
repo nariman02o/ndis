@@ -19,6 +19,12 @@ class PacketAnalyzer:
         self.dpi_engine = dpi_engine
         self.fpga_interface = fpga_interface
         self.hardware_acceleration = True  # Default to hardware acceleration if available
+        
+        # Initialize FPGA hardware acceleration if available
+        if self.fpga_interface.is_acceleration_enabled():
+            logger.info("FPGA hardware acceleration is available and enabled")
+        else:
+            logger.info("FPGA hardware acceleration is not available, using software processing")
         # Common ports and their services
         self.common_ports = {
             20: 'ftp_data', 21: 'ftp_control',
@@ -64,23 +70,55 @@ class PacketAnalyzer:
     def extract_features(self, packet):
         """
         Extract features from a packet for model input
+        with optional hardware acceleration
         """
+        # Check if hardware acceleration is enabled and available
+        if self.hardware_acceleration and self.fpga_interface.is_acceleration_enabled():
+            try:
+                # Offload feature extraction to FPGA hardware
+                logger.debug(f"Using FPGA hardware acceleration for packet processing")
+                
+                # Process packet with FPGA hardware
+                fpga_result = self.fpga_interface.process_packet(packet)
+                
+                # Extract features from FPGA hardware result
+                header_features = np.array(list(fpga_result['header_features'].values()))
+                
+                # Extract payload features if DPI is enabled
+                payload = packet.get('payload', None)
+                if payload and self.dpi_engine.is_enabled:
+                    if 'payload_features' in fpga_result:
+                        # Use FPGA-extracted payload features
+                        payload_features = np.array(fpga_result['payload_features']['statistical_features'])
+                    else:
+                        # Fall back to software DPI if not available in FPGA result
+                        payload_features = np.array(self.dpi_engine.extract_features(payload))
+                else:
+                    # If no payload or DPI disabled, use zero features
+                    payload_features = np.array([0.0] * 15)  # Match the size in DPIEngine.extract_features
+                
+                # Combine features
+                combined_features = np.concatenate([header_features, payload_features])
+                return combined_features
+                
+            except Exception as e:
+                logger.warning(f"FPGA acceleration failed: {str(e)}. Falling back to software processing.")
+                # Fall back to software processing
+        
+        # Software processing (either by choice or as fallback)
         # Extract header features
         header_features = self._extract_header_features(packet)
         
         # Extract payload features if DPI is enabled
         payload = packet.get('payload', None)
         if payload and self.dpi_engine.is_enabled:
-            payload_features = self.dpi_engine.extract_features(payload)
+            payload_features = np.array(self.dpi_engine.extract_features(payload))
         else:
             # If no payload or DPI disabled, use zero features
-            payload_features = [0.0] * 15  # Match the size in DPIEngine.extract_features
+            payload_features = np.array([0.0] * 15)  # Match the size in DPIEngine.extract_features
         
         # Combine features
-        combined_features = np.concatenate([
-            header_features,
-            payload_features
-        ])
+        combined_features = np.concatenate([header_features, payload_features])
         
         return combined_features
     
@@ -227,25 +265,76 @@ class PacketAnalyzer:
             return min(float(byte_count) / flow_duration / 1000000.0, 1.0)
         return min(float(byte_count) / 1000000.0, 1.0)
     
+    def enable_hardware_acceleration(self):
+        """Enable FPGA hardware acceleration"""
+        self.hardware_acceleration = True
+        self.fpga_interface.enable_acceleration()
+        logger.info("FPGA hardware acceleration enabled")
+        return True
+    
+    def disable_hardware_acceleration(self):
+        """Disable FPGA hardware acceleration"""
+        self.hardware_acceleration = False
+        self.fpga_interface.disable_acceleration()
+        logger.info("FPGA hardware acceleration disabled, using software processing")
+        return True
+    
+    def get_hardware_acceleration_status(self):
+        """Get the status of hardware acceleration"""
+        return {
+            "enabled": self.hardware_acceleration,
+            "available": self.fpga_interface.is_acceleration_enabled(),
+            "performance": self.fpga_interface.get_performance_metrics()
+        }
+    
     def analyze_packet(self, packet):
         """
         Perform a full analysis of a packet for visualization and reporting
         Returns a dictionary with detailed analysis results
+        Uses FPGA acceleration when available
         """
-        # Basic packet information
-        analysis = {
-            'timestamp': packet.get('timestamp', datetime.now().isoformat()),
-            'src_ip': packet.get('src', 'unknown'),
-            'dst_ip': packet.get('dst', 'unknown'),
-            'src_port': packet.get('sport', 0),
-            'dst_port': packet.get('dport', 0),
-            'protocol': packet.get('proto', 'unknown'),
-            'length': packet.get('len', 0),
-        }
+        # Check if FPGA acceleration is enabled
+        fpga_result = None
+        if self.hardware_acceleration and self.fpga_interface.is_acceleration_enabled():
+            try:
+                # Process packet with FPGA hardware
+                fpga_result = self.fpga_interface.process_packet(packet)
+                logger.debug("Using FPGA hardware acceleration for packet analysis")
+            except Exception as e:
+                logger.warning(f"FPGA acceleration failed during analysis: {str(e)}")
+                fpga_result = None
+                
+        # Basic packet information (use FPGA results if available)
+        if fpga_result and 'header_features' in fpga_result:
+            hf = fpga_result['header_features']
+            analysis = {
+                'timestamp': packet.get('timestamp', datetime.now().isoformat()),
+                'src_ip': hf.get('src_ip', packet.get('src', 'unknown')),
+                'dst_ip': hf.get('dst_ip', packet.get('dst', 'unknown')),
+                'src_port': hf.get('src_port', packet.get('sport', 0)),
+                'dst_port': hf.get('dst_port', packet.get('dport', 0)),
+                'protocol': hf.get('protocol', packet.get('proto', 'unknown')),
+                'length': hf.get('length', packet.get('len', 0)),
+                'hardware_accelerated': True,
+                'processing_mode': fpga_result.get('processing_mode', 'hardware_simulated')
+            }
+        else:
+            # Use software processing
+            analysis = {
+                'timestamp': packet.get('timestamp', datetime.now().isoformat()),
+                'src_ip': packet.get('src', 'unknown'),
+                'dst_ip': packet.get('dst', 'unknown'),
+                'src_port': packet.get('sport', 0),
+                'dst_port': packet.get('dport', 0),
+                'protocol': packet.get('proto', 'unknown'),
+                'length': packet.get('len', 0),
+                'hardware_accelerated': False,
+                'processing_mode': 'software'
+            }
         
         # Add port service names if known
-        src_port = packet.get('sport', 0)
-        dst_port = packet.get('dport', 0)
+        src_port = analysis['src_port']
+        dst_port = analysis['dst_port']
         
         if src_port in self.common_ports:
             analysis['src_service'] = self.common_ports[src_port]
@@ -258,7 +347,7 @@ class PacketAnalyzer:
             analysis['dst_service'] = 'unknown'
         
         # TCP-specific information
-        if packet.get('proto', '').lower() == 'tcp':
+        if analysis['protocol'].lower() == 'tcp':
             flags = packet.get('flags', 0)
             flag_names = []
             
@@ -279,19 +368,36 @@ class PacketAnalyzer:
             analysis['tcp_window'] = packet.get('window', 0)
         
         # ICMP-specific information
-        if packet.get('proto', '').lower() == 'icmp':
+        if analysis['protocol'].lower() == 'icmp':
             analysis['icmp_type'] = packet.get('icmp_type', 0)
             analysis['icmp_code'] = packet.get('icmp_code', 0)
         
-        # Payload analysis
-        if 'payload' in packet and packet['payload'] and self.dpi_engine.is_enabled:
+        # Payload analysis (use FPGA results if available)
+        if fpga_result and 'payload_features' in fpga_result and self.dpi_engine.is_enabled:
+            # Use payload analysis from FPGA
+            analysis['payload'] = {
+                'entropy': fpga_result['payload_features'].get('entropy', 0),
+                'printable_ratio': fpga_result['payload_features'].get('printable_ratio', 0),
+                'suspicious_patterns': [],  # FPGA doesn't do pattern matching in our implementation
+                'content_type': 'unknown'
+            }
+        elif 'payload' in packet and packet['payload'] and self.dpi_engine.is_enabled:
+            # Software payload analysis
             payload_analysis = self.dpi_engine.analyze_payload(packet['payload'])
             analysis['payload'] = payload_analysis
         else:
             analysis['payload'] = None
         
-        # Extract features
+        # Extract features with hardware acceleration if available
         features = self.extract_features(packet)
         analysis['features'] = features.tolist()
+        
+        # Add FPGA performance metrics if hardware accelerated
+        if analysis.get('hardware_accelerated', False):
+            performance = self.fpga_interface.get_performance_metrics()
+            analysis['fpga_metrics'] = {
+                'avg_processing_time': performance.get('avg_processing_time', 0),
+                'packets_processed': performance.get('packets_processed', 0)
+            }
         
         return analysis
