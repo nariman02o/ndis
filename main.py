@@ -678,14 +678,21 @@ def stop_attack():
 
 def simulation_loop():
     """Background thread for packet simulation"""
+    print("Starting network simulation thread...")
     try:
         # Make sure session state is properly initialized
         if 'simulator_running' not in st.session_state:
             st.session_state.simulator_running = False
+            print("Simulator not configured to run. Exiting thread.")
             return
             
         if 'attack_active' not in st.session_state:
             st.session_state.attack_active = False
+        
+        if 'last_update_time' not in st.session_state:
+            st.session_state.last_update_time = time.time()
+        
+        print(f"Simulator running status: {st.session_state.simulator_running}")
             
         # Main simulation loop
         while st.session_state.simulator_running:
@@ -695,13 +702,45 @@ def simulation_loop():
                     hasattr(st.session_state, 'attack_info') and 
                     st.session_state.attack_info is not None and
                     datetime.now() >= st.session_state.attack_info['end_time']):
+                    print("Attack simulation ending based on duration")
                     stop_attack()
                 
-                # Generate packet batch
-                update_network_data(batch_size=5)
+                # Record time before generating packets
+                start_time = time.time()
                 
-                # Sleep to simulate realistic packet arrival
-                time.sleep(1)
+                # Generate varying batch sizes for more realistic traffic
+                batch_size = 5
+                if st.session_state.attack_active:
+                    # More packets during attack
+                    batch_size = random.randint(8, 15)
+                else:
+                    # Normal traffic
+                    batch_size = random.randint(3, 8)
+                
+                # Generate packet batch
+                packets = update_network_data(batch_size=batch_size)
+                print(f"Generated {len(packets)} new packets in simulation")
+                
+                # Update simulation metrics
+                elapsed = time.time() - start_time
+                packets_per_second = batch_size / elapsed if elapsed > 0 else 0
+                st.session_state.last_update_time = time.time()
+                
+                # Record the packets per second (for metrics)
+                if 'traffic_rate_history' not in st.session_state:
+                    st.session_state.traffic_rate_history = []
+                
+                # Keep only the most recent measurements
+                st.session_state.traffic_rate_history.append(packets_per_second)
+                if len(st.session_state.traffic_rate_history) > 60:  # Keep last minute
+                    st.session_state.traffic_rate_history = st.session_state.traffic_rate_history[-60:]
+                
+                # Sleep to simulate realistic packet arrival (varies by traffic type)
+                if st.session_state.attack_active:
+                    time.sleep(0.5)  # Faster during attacks
+                else:
+                    time.sleep(1.0)  # Normal traffic pace
+                    
             except Exception as e:
                 print(f"Error in simulation iteration: {str(e)}")
                 time.sleep(2)  # Wait before retrying
@@ -710,22 +749,57 @@ def simulation_loop():
         # Make sure to clean up in case of error
         st.session_state.simulator_running = False
         st.session_state.monitoring_active = False
+    
+    print("Network simulation thread exiting.")
 
 def start_simulation():
     """Start the packet simulation in a background thread"""
+    print("Starting network packet simulation...")
+    
     # Make sure session state is properly initialized
     if 'simulator_running' not in st.session_state:
         st.session_state.simulator_running = False
     
+    if 'detection_history' not in st.session_state:
+        st.session_state.detection_history = []
+    
+    if 'alert_history' not in st.session_state:
+        st.session_state.alert_history = []
+        
+    if 'pending_alerts' not in st.session_state:
+        st.session_state.pending_alerts = []
+    
+    # If already running, don't start a new thread
     if st.session_state.simulator_running:
-        return
+        print("Simulation already running. Not starting a new thread.")
+        return True
+    
+    # Initialize network entities if not already done
+    if 'network_entities' not in st.session_state:
+        # Create network structure for simulated traffic
+        st.session_state.network_entities = {
+            'clients': [f"192.168.1.{i}" for i in range(10, 50)],
+            'servers': {
+                'web': {'ip': '172.16.0.10', 'services': [80, 443]},
+                'db': {'ip': '172.16.0.20', 'services': [3306, 5432]},
+                'dns': {'ip': '172.16.0.30', 'services': [53]},
+                'mail': {'ip': '172.16.0.40', 'services': [25, 143, 587]}
+            }
+        }
     
     # Set the flag and start the thread
     st.session_state.simulator_running = True
+    
+    # Generate initial packets to have some data
+    print("Generating initial batch of packets...")
+    update_network_data(batch_size=15)
+    
     try:
+        print("Starting background simulation thread...")
         simulation_thread = threading.Thread(target=simulation_loop)
         simulation_thread.daemon = True
         simulation_thread.start()
+        print(f"Simulation thread started: {simulation_thread.name}")
         return True
     except Exception as e:
         st.error(f"Error starting simulation: {str(e)}")
@@ -770,26 +844,24 @@ with tab1:
     with control_col1:
         if not st.session_state.monitoring_active:
             if st.button("Start Monitoring System", type="primary", key="start_monitor"):
-                # Generate initial batch of packets to show immediate results
-                for _ in range(20):
-                    packet = generate_packet()
-                    st.session_state.detection_history.append(packet)
-                    update_stats_with_packet(packet)
+                # Make sure all required state variables are initialized
+                if 'detection_history' not in st.session_state:
+                    st.session_state.detection_history = []
+                if 'alert_history' not in st.session_state:
+                    st.session_state.alert_history = []
+                if 'pending_alerts' not in st.session_state:
+                    st.session_state.pending_alerts = []
                     
-                    # Generate some alerts
-                    if packet.get('is_malicious', False) or (random.random() < 0.1):
-                        alert = generate_alert_for_packet(packet)
-                        st.session_state.alert_history.append(alert)
-                        st.session_state.pending_alerts.append(alert)
-                
-                # Start background monitor
+                # Start background monitor (which now generates initial data)
                 st.session_state.monitoring_active = True
                 success = start_simulation()
                 
                 if success:
                     st.success("✅ Monitoring system started. Network traffic is now being analyzed.")
+                    time.sleep(1)  # Give time for initial data to be generated
                     st.rerun()  # Refresh to show initial data
                 else:
+                    st.session_state.monitoring_active = False
                     st.error("❌ Failed to start monitoring system. Please try again.")
         else:
             if st.button("Stop Monitoring System", type="primary", key="stop_monitor"):
