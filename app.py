@@ -14,6 +14,7 @@ from simulator import NetworkSimulator
 from utils import load_model, save_model, update_detection_history
 from database import db
 from network_dashboard import create_network_dashboard
+from fpga_interface import fpga_interface  # Import FPGA interface for hardware acceleration
 
 # Page configuration
 st.set_page_config(
@@ -114,11 +115,48 @@ with tab1:
                 st.rerun()
     
     with control_col2:
-        dpi_enabled = st.checkbox("Enable Deep Packet Inspection", value=True)
-        if dpi_enabled:
-            st.session_state.dpi_engine.enable()
-        else:
-            st.session_state.dpi_engine.disable()
+        # Control columns for various system features
+        feature_col1, feature_col2 = st.columns(2)
+        
+        with feature_col1:
+            dpi_enabled = st.checkbox("Enable Deep Packet Inspection", value=True)
+            if dpi_enabled:
+                st.session_state.dpi_engine.enable()
+            else:
+                st.session_state.dpi_engine.disable()
+        
+        with feature_col2:
+            # FPGA hardware acceleration toggle
+            fpga_enabled = st.checkbox("Enable FPGA Acceleration", value=True,
+                                      help="Toggle PYNQ-Z1 FPGA hardware acceleration for packet processing")
+            if fpga_enabled:
+                st.session_state.packet_analyzer.enable_hardware_acceleration()
+            else:
+                st.session_state.packet_analyzer.disable_hardware_acceleration()
+                
+        # Show FPGA acceleration status and metrics
+        if fpga_enabled:
+            hw_status = st.session_state.packet_analyzer.get_hardware_acceleration_status()
+            metrics = hw_status["performance"]
+            
+            st.markdown("""
+            <div style="background-color:#e6f7ff; padding:10px; border-radius:5px; margin-top:10px;">
+                <h4 style="margin:0;">FPGA Acceleration Status</h4>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Display FPGA acceleration metrics
+            fpga_col1, fpga_col2, fpga_col3 = st.columns(3)
+            
+            with fpga_col1:
+                st.metric("Processing Mode", "Hardware" if hw_status["available"] else "Software")
+            
+            with fpga_col2:
+                st.metric("Packets Accelerated", metrics["hardware_accelerated"])
+            
+            with fpga_col3:
+                avg_time = f"{metrics['avg_processing_time']*1000:.2f} ms"
+                st.metric("Avg. Processing Time", avg_time)
     
     # Stats section
     st.subheader("Monitoring Statistics")
@@ -690,6 +728,89 @@ with tab4:
 
 with tab5:
     st.header("Performance Metrics")
+    
+    # FPGA Hardware Acceleration Metrics
+    st.subheader("FPGA Hardware Acceleration")
+    
+    # Description of FPGA acceleration
+    st.markdown("""
+    This NIDS system is compatible with **PYNQ-Z1 FPGA** for hardware acceleration of packet processing tasks.
+    The FPGA can be used to accelerate:
+    - Packet header feature extraction
+    - Deep packet inspection
+    - Machine learning inference
+    
+    Hardware acceleration significantly improves throughput and reduces processing latency for real-time
+    network traffic analysis. The current implementation runs in simulation mode on systems without 
+    an actual PYNQ-Z1 board connected.
+    """)
+    
+    # FPGA Acceleration Controls
+    fpga_col1, fpga_col2 = st.columns(2)
+    
+    with fpga_col1:
+        # FPGA Status and Controls
+        hw_status = st.session_state.packet_analyzer.get_hardware_acceleration_status()
+        
+        # Current status display
+        st.markdown(f"""
+        <div style="background-color:#f0f2f6; padding:15px; border-radius:5px; margin-bottom:15px;">
+            <h4 style="margin-top:0;">FPGA Status</h4>
+            <p>Current Mode: <b>{"Hardware Accelerated" if hw_status["enabled"] else "Software Only"}</b></p>
+            <p>FPGA Available: <b>{"Yes" if hw_status["available"] else "No"}</b></p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Controls
+        if st.button("Enable FPGA Acceleration", disabled=hw_status["enabled"]):
+            st.session_state.packet_analyzer.enable_hardware_acceleration()
+            st.success("FPGA hardware acceleration enabled")
+            
+        if st.button("Disable FPGA Acceleration", disabled=not hw_status["enabled"]):
+            st.session_state.packet_analyzer.disable_hardware_acceleration()
+            st.success("FPGA hardware acceleration disabled")
+            
+        if st.button("Reset FPGA Metrics"):
+            fpga_interface.reset_performance_metrics()
+            st.success("FPGA performance metrics reset")
+    
+    with fpga_col2:
+        # Performance metrics
+        metrics = hw_status["performance"]
+        
+        # Create metrics visualization
+        st.markdown("<h4>Performance Metrics</h4>", unsafe_allow_html=True)
+        
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Packets Processed", metrics["packets_processed"])
+        m2.metric("Hardware Accelerated", metrics["hardware_accelerated"])
+        m3.metric("Software Processed", metrics["software_processed"])
+        
+        # Average processing time
+        avg_time = metrics["avg_processing_time"] * 1000  # Convert to ms
+        
+        # Create a gauge chart for processing time
+        if metrics["packets_processed"] > 0:
+            fig = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=avg_time,
+                title={'text': "Avg. Processing Time (ms)"},
+                gauge={
+                    'axis': {'range': [None, 5]},
+                    'bar': {'color': "#2C3E50"},
+                    'steps': [
+                        {'range': [0, 0.5], 'color': "#27AE60"},
+                        {'range': [0.5, 1], 'color': "#F39C12"},
+                        {'range': [1, 5], 'color': "#E74C3C"}
+                    ]
+                }
+            ))
+            
+            fig.update_layout(height=250, margin=dict(l=20, r=20, t=50, b=20))
+            st.plotly_chart(fig, use_container_width=True)
+    
+    # Divider
+    st.markdown("---")
     
     # Model performance metrics
     st.subheader("Model Performance")
