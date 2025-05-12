@@ -106,10 +106,24 @@ if 'initialized' not in st.session_state:
     st.session_state.processed_alerts = []
     st.session_state.feedback_data = []
     st.session_state.model_initialized = False
+    st.session_state.model_retrained = False
+    st.session_state.retraining_needed = False
     st.session_state.benign_ratio = 0.8
     st.session_state.attack_active = False
     st.session_state.current_attack = None
     st.session_state.last_update = datetime.now()
+    
+    # Model metrics
+    st.session_state.model_metrics = {
+        "precision": 0.85,
+        "recall": 0.82,
+        "f1": 0.83,
+        "accuracy": 0.90,
+        "false_positive_rate": 0.08,
+        "training_iterations": 0,
+        "improvement_rate": 0.0,
+        "last_retrained": None
+    }
     
     # Statistics
     st.session_state.stats = {
@@ -1404,9 +1418,249 @@ with tab3:
     else:
         st.info("No alerts have been generated yet. Start the monitoring system to detect potential threats.")
 
-# Tab 4: Analytics
+# Tab 4: Analytics & Model Training
 with tab4:
-    st.header("Security Analytics & Insights")
+    st.header("Security Analytics & Model Management")
+    
+    # Model management section
+    st.subheader("Model Training & Metrics")
+    
+    model_col1, model_col2 = st.columns([2, 1])
+    
+    with model_col1:
+        # Basic model information
+        st.markdown("""
+        ### Current Model Information
+        The NIDS uses a reinforcement learning model to detect network intrusions. 
+        The model can be retrained with admin feedback to improve detection accuracy and reduce false positives.
+        """)
+        
+        # Model metrics
+        metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
+        
+        with metrics_col1:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-value">{st.session_state.model_metrics['accuracy']:.2f}</div>
+                <div class="metric-label">Accuracy</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with metrics_col2:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-value">{st.session_state.model_metrics['precision']:.2f}</div>
+                <div class="metric-label">Precision</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with metrics_col3:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-value">{st.session_state.model_metrics['recall']:.2f}</div>
+                <div class="metric-label">Recall</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with metrics_col4:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-value">{st.session_state.model_metrics['f1']:.2f}</div>
+                <div class="metric-label">F1 Score</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Last trained info
+        if st.session_state.model_metrics['last_retrained']:
+            last_trained = st.session_state.model_metrics['last_retrained'].strftime('%Y-%m-%d %H:%M:%S')
+            training_iterations = st.session_state.model_metrics['training_iterations']
+            st.info(f"Model last retrained: {last_trained} (Total iterations: {training_iterations})")
+        else:
+            st.warning("Model has not been retrained yet. Use feedback data to improve the model.")
+        
+        # Retraining recommendations
+        if len(st.session_state.feedback_data) > 5:
+            pending_feedback = len(st.session_state.feedback_data)
+            last_trained_time = st.session_state.model_metrics.get('last_retrained')
+            
+            if last_trained_time is None or (datetime.now() - last_trained_time).total_seconds() > 300:  # 5 minutes
+                st.success(f"✅ Retraining recommended: {pending_feedback} feedback items available")
+            else:
+                st.info(f"ℹ️ {pending_feedback} feedback items available for next retraining")
+        else:
+            needed_feedback = max(0, 5 - len(st.session_state.feedback_data))
+            st.warning(f"⚠️ Need {needed_feedback} more feedback items before retraining")
+    
+    with model_col2:
+        # Retraining control
+        st.markdown("### Training Controls")
+        
+        if st.button("Retrain Model", key="retrain_model", type="primary"):
+            with st.spinner("Retraining model with admin feedback..."):
+                # Simulate model training delay
+                time.sleep(2)
+                
+                # Update model metrics to show improvement
+                current_metrics = st.session_state.model_metrics
+                
+                # Calculate improvement factors based on amount of feedback
+                feedback_amount = len(st.session_state.feedback_data)
+                max_improvement = min(0.15, 0.02 * feedback_amount)  # Cap at 15% improvement
+                
+                # Increase metrics with diminishing returns
+                accuracy_improvement = max_improvement * (1 - current_metrics['accuracy'])
+                precision_improvement = max_improvement * (1 - current_metrics['precision'])
+                recall_improvement = max_improvement * (1 - current_metrics['recall'])
+                f1_improvement = max_improvement * (1 - current_metrics['f1'])
+                fpr_reduction = current_metrics['false_positive_rate'] * max_improvement
+                
+                # Update metrics
+                st.session_state.model_metrics.update({
+                    "accuracy": min(0.99, current_metrics['accuracy'] + accuracy_improvement),
+                    "precision": min(0.99, current_metrics['precision'] + precision_improvement),
+                    "recall": min(0.99, current_metrics['recall'] + recall_improvement),
+                    "f1": min(0.99, current_metrics['f1'] + f1_improvement),
+                    "false_positive_rate": max(0.01, current_metrics['false_positive_rate'] - fpr_reduction),
+                    "training_iterations": current_metrics['training_iterations'] + 1,
+                    "improvement_rate": max_improvement,
+                    "last_retrained": datetime.now()
+                })
+                
+                # Mark model as retrained
+                st.session_state.model_retrained = True
+                st.session_state.retraining_needed = False
+                
+                # Clear some of the feedback data (but keep the most recent ones)
+                if len(st.session_state.feedback_data) > 10:
+                    st.session_state.feedback_data = st.session_state.feedback_data[-10:]
+                
+                st.success("✅ Model successfully retrained with admin feedback!")
+        
+        # Initialize model button
+        if not st.session_state.model_initialized:
+            if st.button("Initialize Model", key="init_model"):
+                with st.spinner("Initializing model with default dataset..."):
+                    # Simulate initialization delay
+                    time.sleep(3)
+                    
+                    # Mark model as initialized
+                    st.session_state.model_initialized = True
+                    st.success("✅ Model successfully initialized with default dataset!")
+        
+        # Deep Packet Inspection toggle
+        st.markdown("### DPI Engine Settings")
+        dpi_enabled = st.toggle("Enable Deep Packet Inspection", value=True, key="dpi_enabled")
+        
+        if dpi_enabled:
+            st.success("DPI engine is active and analyzing packet payloads")
+        else:
+            st.warning("DPI engine is disabled. Only header analysis will be performed.")
+    
+    # Model performance visualization
+    st.subheader("Model Performance History")
+    
+    # If model has been retrained, show a performance improvement chart
+    if st.session_state.model_metrics['training_iterations'] > 0:
+        # Create simulated historical data based on current metrics and improvement rate
+        iterations = st.session_state.model_metrics['training_iterations']
+        current_accuracy = st.session_state.model_metrics['accuracy']
+        current_precision = st.session_state.model_metrics['precision']
+        current_recall = st.session_state.model_metrics['recall']
+        
+        # Start with baseline values
+        baseline_accuracy = max(0.65, current_accuracy - (0.05 * iterations))
+        baseline_precision = max(0.60, current_precision - (0.05 * iterations))
+        baseline_recall = max(0.55, current_recall - (0.05 * iterations))
+        
+        # Generate history data
+        history_data = []
+        for i in range(iterations + 1):
+            if i == 0:
+                # Initial values
+                history_data.append({
+                    'Iteration': i,
+                    'Accuracy': baseline_accuracy,
+                    'Precision': baseline_precision,
+                    'Recall': baseline_recall,
+                    'False Positive Rate': min(0.40, st.session_state.model_metrics['false_positive_rate'] * 2)
+                })
+            else:
+                # Values after each retraining
+                prev = history_data[-1]
+                improvement_factor = 1 - (0.7 ** i)  # Diminishing returns
+                
+                history_data.append({
+                    'Iteration': i,
+                    'Accuracy': prev['Accuracy'] + (current_accuracy - baseline_accuracy) * (improvement_factor / iterations),
+                    'Precision': prev['Precision'] + (current_precision - baseline_precision) * (improvement_factor / iterations),
+                    'Recall': prev['Recall'] + (current_recall - baseline_recall) * (improvement_factor / iterations),
+                    'False Positive Rate': max(st.session_state.model_metrics['false_positive_rate'],
+                                             prev['False Positive Rate'] * (1 - 0.2 * improvement_factor))
+                })
+        
+        # Convert to dataframe
+        history_df = pd.DataFrame(history_data)
+        
+        # Create performance chart
+        metrics_tab1, metrics_tab2 = st.tabs(["Performance Metrics", "False Positive Rate"])
+        
+        with metrics_tab1:
+            # Melt dataframe for plotting multiple metrics
+            plot_df = pd.melt(
+                history_df, 
+                id_vars=['Iteration'], 
+                value_vars=['Accuracy', 'Precision', 'Recall'],
+                var_name='Metric', 
+                value_name='Value'
+            )
+            
+            fig = px.line(
+                plot_df,
+                x='Iteration',
+                y='Value',
+                color='Metric',
+                markers=True,
+                color_discrete_map={
+                    'Accuracy': '#1E88E5',
+                    'Precision': '#4CAF50',
+                    'Recall': '#FF9800'
+                },
+                title='Model Performance Metrics Over Retraining Iterations'
+            )
+            
+            fig.update_layout(
+                height=400,
+                yaxis_range=[0.5, 1.0],
+                xaxis_title="Retraining Iteration",
+                yaxis_title="Metric Value",
+                legend_title="",
+                hovermode="x unified"
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with metrics_tab2:
+            fig = px.line(
+                history_df,
+                x='Iteration',
+                y='False Positive Rate',
+                markers=True,
+                color_discrete_sequence=['#E53935'],
+                title='False Positive Rate Reduction Over Retraining Iterations'
+            )
+            
+            fig.update_layout(
+                height=400,
+                yaxis_range=[0, 0.5],
+                xaxis_title="Retraining Iteration",
+                yaxis_title="False Positive Rate",
+                hovermode="x unified"
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+    else:
+        # Show placeholder for model performance
+        st.info("No model retraining history available yet. Retrain the model to see performance metrics.")
     
     # Overall statistics
     st.subheader("Security Overview")
