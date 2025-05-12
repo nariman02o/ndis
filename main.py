@@ -1,3 +1,27 @@
+"""
+Network Intrusion Detection System (NIDS) with PYNQ-Z1 FPGA Hardware Acceleration
+
+This application implements a machine learning based NIDS with deep packet inspection
+capabilities and PYNQ-Z1 FPGA hardware acceleration for improved performance. The system
+includes a real-time network traffic simulator, a visualization dashboard, and an 
+alert management system.
+
+Key features:
+- Machine learning based network intrusion detection
+- Deep packet inspection for protocol analysis
+- Hardware acceleration using PYNQ-Z1 FPGA
+- Real-time network traffic monitoring and visualization
+- Alert management system with admin feedback loop
+
+FPGA Integration:
+- The system supports offloading packet processing to a PYNQ-Z1 FPGA for
+  hardware acceleration
+- In simulation mode (without actual FPGA hardware), the system simulates
+  the performance benefits
+- With an actual PYNQ-Z1 board, packet feature extraction and machine learning
+  inference can be performed in hardware for better performance
+"""
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -11,6 +35,7 @@ from datetime import datetime, timedelta
 import os
 import threading
 from collections import deque
+from fpga_interface import fpga_interface  # Import FPGA interface for hardware acceleration
 
 # Page configuration
 st.set_page_config(
@@ -1036,10 +1061,34 @@ with tab1:
         )
     
     with control_col3:
+        # First show monitoring status
         if st.session_state.monitoring_active:
             st.success("System is actively monitoring network traffic")
         else:
             st.warning("System monitoring is inactive")
+        
+        # Then add FPGA acceleration controls
+        # Add FPGA hardware acceleration toggle
+        if 'fpga_acceleration' not in st.session_state:
+            st.session_state.fpga_acceleration = True
+            
+        fpga_enabled = st.checkbox("Enable FPGA Hardware Acceleration", 
+                                  value=st.session_state.fpga_acceleration,
+                                  help="Toggle PYNQ-Z1 FPGA hardware acceleration for packet processing")
+        
+        # Update state and FPGA interface
+        if fpga_enabled != st.session_state.fpga_acceleration:
+            st.session_state.fpga_acceleration = fpga_enabled
+            if fpga_enabled:
+                fpga_interface.enable_acceleration()
+            else:
+                fpga_interface.disable_acceleration()
+        
+        # Show current acceleration mode
+        if fpga_enabled:
+            st.info("🔋 FPGA hardware acceleration enabled (Simulation mode)")
+        else:
+            st.info("💻 Using software-only processing mode")
     
     # Main metrics
     st.subheader("Real-time Network Metrics")
@@ -1088,6 +1137,34 @@ with tab1:
             <div class="metric-label">Pending Alerts</div>
         </div>
         """, unsafe_allow_html=True)
+    
+    # FPGA Hardware Acceleration Metrics
+    if st.session_state.fpga_acceleration:
+        st.subheader("FPGA Hardware Acceleration Metrics")
+        
+        # Get performance metrics from FPGA interface
+        perf_metrics = fpga_interface.get_performance_metrics()
+        
+        # Create metrics columns
+        fpga_col1, fpga_col2, fpga_col3, fpga_col4 = st.columns(4)
+        
+        with fpga_col1:
+            st.metric("Processing Mode", "Hardware (Simulated)", 
+                    help="Current packet processing mode - hardware acceleration or software only")
+            
+        with fpga_col2:
+            st.metric("Packets Processed", perf_metrics["packets_processed"], 
+                    help="Total number of packets processed by the FPGA")
+        
+        with fpga_col3:
+            st.metric("Hardware Accelerated", perf_metrics["hardware_accelerated"], 
+                    help="Number of packets processed with hardware acceleration")
+            
+        with fpga_col4:
+            # Convert to milliseconds and format with 2 decimal places
+            avg_time = f"{perf_metrics['avg_processing_time']*1000:.2f} ms"
+            st.metric("Avg. Processing Time", avg_time, 
+                    help="Average time to process a packet")
     
     # Attack simulation section
     st.subheader("Attack Simulation")
