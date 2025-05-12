@@ -10,7 +10,7 @@ class DataPreprocessor:
     def __init__(self):
         self.scaler = StandardScaler()
         self.min_max_scaler = MinMaxScaler()
-        self.categorical_encoder = OneHotEncoder(sparse=False, handle_unknown='ignore')
+        self.categorical_encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
         self.imputer = SimpleImputer(strategy='mean')
         self.feature_names = None
         self.categorical_features = None
