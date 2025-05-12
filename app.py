@@ -222,9 +222,55 @@ with tab2:
 with tab3:
     st.header("Alerts & Admin Feedback")
     
+    # Add a button to manually generate test alerts for demonstration purposes
+    if st.button("Generate Test Alerts", key="gen_test_alerts"):
+        # Create some example alerts with random data
+        if 'pending_alerts' not in st.session_state:
+            st.session_state.pending_alerts = []
+            
+        # Generate 3 test alerts with example data
+        for i in range(3):
+            is_malicious = random.random() > 0.3  # 70% chance to be malicious
+            
+            # Create a simulated packet
+            packet = {
+                "timestamp": datetime.now().isoformat(),
+                "src": f"192.168.1.{random.randint(10, 200)}",
+                "dst": f"203.0.113.{random.randint(1, 254)}",
+                "sport": random.randint(1024, 65000),
+                "dport": random.choice([80, 443, 22, 21, 25, 3306]),
+                "proto": random.choice(["tcp", "udp", "icmp"]),
+                "len": random.randint(64, 1500),
+                "flags": random.randint(0, 255) if random.random() > 0.5 else None,
+                "payload": '{"data": "suspicious content"}' if is_malicious else '{"data": "normal traffic"}',
+                "is_actually_malicious": is_malicious
+            }
+            
+            # Add a test alert
+            alert_id = f"test_alert_{int(time.time())}_{i}"
+            confidence = random.uniform(0.75, 0.98) if is_malicious else random.uniform(0.6, 0.85)
+            
+            # Create random features (we'll use 10 features)
+            features = [random.random() for _ in range(10)]
+            
+            alert_data = {
+                "id": alert_id,
+                "timestamp": datetime.now().isoformat(),
+                "packet": packet,
+                "features": features,
+                "confidence": confidence,
+                "status": "pending"  # pending, confirmed, rejected
+            }
+            
+            st.session_state.pending_alerts.append(alert_data)
+        
+        st.success(f"Generated {3} test alerts for demonstration")
+    
+    # Show alerts if we have any
     if len(st.session_state.pending_alerts) > 0:
         st.warning(f"⚠️ You have {len(st.session_state.pending_alerts)} pending alerts that require your attention.")
         
+        # Process each alert
         for i, alert in enumerate(st.session_state.pending_alerts):
             with st.expander(f"Alert #{i+1} - {alert['timestamp']} (Confidence: {alert['confidence']:.2f})", expanded=i==0):
                 # Display packet information
@@ -233,13 +279,33 @@ with tab3:
                 
                 # Display packet features used for detection
                 st.subheader("Extracted Features")
-                st.write(alert['features'])
+                if isinstance(alert['features'], list) and len(alert['features']) > 0:
+                    feature_df = pd.DataFrame({
+                        'Feature': [f'Feature {j+1}' for j in range(len(alert['features']))],
+                        'Value': alert['features']
+                    })
+                    st.dataframe(feature_df)
+                else:
+                    st.write("No detailed features available for this alert.")
                 
                 # Admin feedback controls
-                col1, col2 = st.columns(2)
+                confirm_col, reject_col = st.columns(2)
                 
-                with col1:
-                    if st.button("✅ Confirm Malicious", key=f"confirm_{alert['id']}"):
+                # Store feedback action in session state to prevent accidental resubmissions
+                if f"confirmed_{alert['id']}" not in st.session_state:
+                    st.session_state[f"confirmed_{alert['id']}"] = False
+                if f"rejected_{alert['id']}" not in st.session_state:
+                    st.session_state[f"rejected_{alert['id']}"] = False
+                
+                with confirm_col:
+                    confirm_clicked = st.button(
+                        "✅ Confirm Malicious", 
+                        key=f"confirm_{alert['id']}",
+                        disabled=st.session_state[f"confirmed_{alert['id']}"] or st.session_state[f"rejected_{alert['id']}"]
+                    )
+                    
+                    if confirm_clicked:
+                        st.session_state[f"confirmed_{alert['id']}"] = True
                         st.session_state.monitoring["admin_confirmed"] += 1
                         alert['status'] = "confirmed"
                         
@@ -263,10 +329,16 @@ with tab3:
                         
                         st.session_state.retraining_needed = True
                         st.success("Alert confirmed as malicious. Model will be retrained.")
-                        st.rerun()
                 
-                with col2:
-                    if st.button("❌ Reject (False Positive)", key=f"reject_{alert['id']}"):
+                with reject_col:
+                    reject_clicked = st.button(
+                        "❌ Reject (False Positive)", 
+                        key=f"reject_{alert['id']}",
+                        disabled=st.session_state[f"confirmed_{alert['id']}"] or st.session_state[f"rejected_{alert['id']}"]
+                    )
+                    
+                    if reject_clicked:
+                        st.session_state[f"rejected_{alert['id']}"] = True
                         st.session_state.monitoring["admin_rejected"] += 1
                         alert['status'] = "rejected"
                         
@@ -290,12 +362,23 @@ with tab3:
                         
                         st.session_state.retraining_needed = True
                         st.success("Alert rejected as false positive. Model will be retrained.")
-                        st.rerun()
+            
+            # Add some spacing between alerts
+            st.markdown("---")
         
-        # Remove processed alerts
-        st.session_state.pending_alerts = [alert for alert in st.session_state.pending_alerts if alert['status'] == "pending"]
+        # Remove processed alerts button
+        remove_processed = st.button("Remove Processed Alerts")
+        if remove_processed:
+            # Remove all alerts that have been processed (confirmed or rejected)
+            st.session_state.pending_alerts = [
+                alert for alert in st.session_state.pending_alerts 
+                if alert['status'] == "pending"
+            ]
+            st.success("Processed alerts removed.")
+            
     else:
         st.success("No pending alerts. System is monitoring the network.")
+        st.info("Start the network monitoring in the Dashboard tab or generate test alerts using the button above to see alerts here.")
     
     # Feedback history
     st.subheader("Recent Feedback History")
