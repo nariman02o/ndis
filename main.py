@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import time
 import json
 import random
+import math
 from datetime import datetime, timedelta
 import os
 import threading
@@ -1147,22 +1148,6 @@ with tab2:
             # Create a lookup from IP to x,y coordinates
             pos = {ip: (node_x[i], node_y[i]) for i, ip in enumerate(all_ips)}
             
-            # Create the edges
-            edge_x = []
-            edge_y = []
-            edge_color = []
-            
-            for edge in edges:
-                x0, y0 = pos[edge['source']]
-                x1, y1 = pos[edge['target']]
-                
-                edge_x.extend([x0, x1, None])
-                edge_y.extend([y0, y1, None])
-                
-                # Set color based on malicious ratio
-                color = edge['color']
-                edge_color.extend([color, color, color])
-            
             # Create node trace
             node_color = ['blue' if t == 'internal' else 'orange' if t == 'dmz' else 'red' for t in node_type]
             
@@ -1180,16 +1165,26 @@ with tab2:
                 )
             )
             
-            # Create edge trace
-            edge_trace = go.Scatter(
-                x=edge_x, y=edge_y,
-                mode='lines',
-                line=dict(width=1, color=edge_color),
-                hoverinfo='none'
-            )
+            # Create edge traces - one trace per edge with its own color
+            edge_traces = []
             
-            # Create the figure
-            fig = go.Figure(data=[edge_trace, node_trace],
+            for edge in edges:
+                x0, y0 = pos[edge['source']]
+                x1, y1 = pos[edge['target']]
+                
+                edge_trace = go.Scatter(
+                    x=[x0, x1, None],
+                    y=[y0, y1, None],
+                    mode='lines',
+                    line=dict(width=1.5, color=edge['color']),
+                    hoverinfo='none'
+                )
+                
+                edge_traces.append(edge_trace)
+            
+            # Create the figure with all traces
+            all_traces = edge_traces + [node_trace]
+            fig = go.Figure(data=all_traces,
                           layout=go.Layout(
                               showlegend=False,
                               hovermode='closest',
