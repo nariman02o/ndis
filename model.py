@@ -81,15 +81,24 @@ class RLModel:
         )
 
         # Save weights after training
-        self.save_weights('model_weights.h5')
+        if not self.save_weights('data/model_weights.h5'):
+            print("Failed to save weights!")
+            
         return history.history
 
-    def save_weights(self, weights_path='model_weights.h5'):
+    def save_weights(self, weights_path='data/model_weights.h5'):
         """Save model weights to H5 format"""
         if not self.model_initialized:
             raise ValueError("Cannot save weights of uninitialized model")
-        self.model.save_weights(weights_path)
-        print(f"Model weights saved to {weights_path}")
+        try:
+            # Create data directory if it doesn't exist
+            os.makedirs('data', exist_ok=True)
+            self.model.save_weights(weights_path)
+            print(f"Model weights saved to {weights_path}")
+            return True
+        except Exception as e:
+            print(f"Error saving weights: {str(e)}")
+            return False
 
     def load_weights(self, weights_path='model_weights.h5'):
         """Load model weights from H5 format"""
