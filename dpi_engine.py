@@ -1,7 +1,5 @@
 import re
-import binascii
 import json
-import base64
 from collections import Counter
 import numpy as np
 

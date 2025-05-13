@@ -5,7 +5,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 import time
 from datetime import datetime
-import os
 import json
 from model import RLModel
 from dpi_engine import DPIEngine
