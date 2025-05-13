@@ -1,28 +1,10 @@
 import numpy as np
 import os
-import pickle
 import random
 from collections import deque
-import torch
-import torch.nn as nn
-import torch.optim as optim
-
-class CNNModel(nn.Module):
-    def __init__(self, input_dim):
-        super(CNNModel, self).__init__()
-        self.network = nn.Sequential(
-            nn.Linear(input_dim, 128),
-            nn.ReLU(),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Linear(32, 1),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        return self.network(x)
+import tensorflow as tf
+from tensorflow.keras import layers, models
+from tensorflow.keras.models import load_model
 
 class RLModel:
     def __init__(self, input_dim=100, memory_size=1000, gamma=0.95, epsilon=1.0, epsilon_min=0.01, epsilon_decay=0.995):
@@ -37,33 +19,27 @@ class RLModel:
         self.model_initialized = False
         self.batch_size = 32
         self.train_step_counter = 0
-        self.device = torch.device("cpu")  # Use CPU for FPGA compatibility
 
     def build_model(self, input_dim):
+        """Build a CNN model"""
         self.input_dim = input_dim
-        self.model = CNNModel(input_dim).to(self.device)
-        self.optimizer = optim.Adam(self.model.parameters())
-        self.criterion = nn.BCELoss()
+        model = models.Sequential([
+            layers.Reshape((input_dim, 1), input_shape=(input_dim,)),
+            layers.Conv1D(32, 3, activation='relu'),
+            layers.Conv1D(64, 3, activation='relu'),
+            layers.Flatten(),
+            layers.Dense(64, activation='relu'),
+            layers.Dense(32, activation='relu'),
+            layers.Dense(1, activation='sigmoid')
+        ])
+
+        model.compile(optimizer='adam',
+                     loss='binary_crossentropy',
+                     metrics=['accuracy'])
+
+        self.model = model
         self.model_initialized = True
         return self.model
-
-    def train(self, X_train, y_train, X_val=None, y_val=None, epochs=10, batch_size=32):
-        if not self.model_initialized:
-            self.build_model(X_train.shape[1])
-
-        # Convert to tensors
-        X_train = torch.FloatTensor(X_train).to(self.device)
-        y_train = torch.FloatTensor(y_train).to(self.device)
-
-        for epoch in range(epochs):
-            self.model.train()
-            self.optimizer.zero_grad()
-            outputs = self.model(X_train)
-            loss = self.criterion(outputs.squeeze(), y_train)
-            loss.backward()
-            self.optimizer.step()
-
-        return {'accuracy': (outputs.round() == y_train).float().mean().item()}
 
     def predict(self, features):
         if not self.model_initialized:
@@ -71,73 +47,69 @@ class RLModel:
             confidence = random.uniform(0.6, 0.9)
             return is_malicious, confidence
 
-        # Convert to tensor
         if isinstance(features, list):
             features = np.array(features)
         if len(features.shape) == 1:
             features = features.reshape(1, -1)
 
-        features = torch.FloatTensor(features).to(self.device)
-
         try:
-            self.model.eval()
-            with torch.no_grad():
-                output = self.model(features)
-                confidence = float(output[0])
-                is_malicious = confidence > 0.5
-                return is_malicious, confidence
+            prediction = self.model.predict(features, verbose=0)
+            confidence = float(prediction[0][0])
+            is_malicious = confidence > 0.5
+            return is_malicious, confidence
         except Exception as e:
             print(f"Prediction error: {str(e)}")
             is_malicious = random.random() > 0.8
             confidence = random.uniform(0.6, 0.9)
             return is_malicious, confidence
 
-    def save(self, model_path='model.pkl', metadata_path='model_metadata.pkl'):
+    def train(self, X_train, y_train, X_val=None, y_val=None, epochs=10, batch_size=32):
         if not self.model_initialized:
-            raise ValueError("Cannot save an uninitialized model")
+            self.build_model(X_train.shape[1])
 
-        torch.save({
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-        }, model_path)
+        if hasattr(X_train, 'values'):
+            X_train = X_train.values
+        if hasattr(y_train, 'values'):
+            y_train = y_train.values
 
-        metadata = {
-            'input_dim': self.input_dim,
-            'epsilon': self.epsilon,
-            'epsilon_min': self.epsilon_min,
-            'epsilon_decay': self.epsilon_decay,
-            'gamma': self.gamma,
-            'train_step_counter': self.train_step_counter
-        }
+        history = self.model.fit(
+            X_train, y_train,
+            validation_data=(X_val, y_val) if X_val is not None else None,
+            epochs=epochs,
+            batch_size=batch_size,
+            verbose=1
+        )
 
-        with open(metadata_path, 'wb') as f:
-            pickle.dump(metadata, f)
+        # Save weights after training
+        self.save_weights('model_weights.h5')
+        return history.history
 
-    def load(self, model_path='model.pkl', metadata_path='model_metadata.pkl'):
-        try:
-            if os.path.exists(model_path):
-                checkpoint = torch.load(model_path)
-                if not self.model_initialized:
-                    self.build_model(self.input_dim)
-                self.model.load_state_dict(checkpoint['model_state_dict'])
-                self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-                self.model_initialized = True
+    def save_weights(self, weights_path='model_weights.h5'):
+        """Save model weights to H5 format"""
+        if not self.model_initialized:
+            raise ValueError("Cannot save weights of uninitialized model")
+        self.model.save_weights(weights_path)
+        print(f"Model weights saved to {weights_path}")
 
-                if os.path.exists(metadata_path):
-                    with open(metadata_path, 'rb') as f:
-                        metadata = pickle.load(f)
+    def load_weights(self, weights_path='model_weights.h5'):
+        """Load model weights from H5 format"""
+        if not self.model_initialized:
+            raise ValueError("Initialize model before loading weights")
+        self.model.load_weights(weights_path)
+        print(f"Model weights loaded from {weights_path}")
 
-                    self.input_dim = metadata.get('input_dim', self.input_dim)
-                    self.epsilon = metadata.get('epsilon', self.epsilon)
-                    self.epsilon_min = metadata.get('epsilon_min', self.epsilon_min)
-                    self.epsilon_decay = metadata.get('epsilon_decay', self.epsilon_decay)
-                    self.gamma = metadata.get('gamma', self.gamma)
-                    self.train_step_counter = metadata.get('train_step_counter', 0)
-
-                return True
-            else:
-                print(f"Model file not found: {model_path}")
-                return False
-        except Exception as e:
-            print(f"Error loading model: {str(e)}")
+    def retrain_with_feedback(self, feedback_data):
+        if not feedback_data:
             return False
+
+        X = np.array([item['features'] for item in feedback_data])
+        y = np.array([item['label'] for item in feedback_data])
+
+        if not self.model_initialized:
+            self.build_model(X.shape[1])
+
+        if len(X) >= 5:
+            self.model.fit(X, y, epochs=5, verbose=1)
+            self.save_weights('model_weights.h5')
+
+        return True
