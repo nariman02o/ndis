@@ -15,4 +15,6 @@ dependencies = [
     "sqlalchemy>=2.0.40",
     "streamlit>=1.45.0",
     "tensorflow>=2.14.0",
+    "docx>=0.2.4",
+    "paramiko>=3.5.1",
 ]
