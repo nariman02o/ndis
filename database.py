@@ -13,7 +13,7 @@ Base = declarative_base()
 class Detection(Base):
     """Detection records for network packets analyzed by the NIDS"""
     __tablename__ = 'detections'
-    
+
     id = Column(Integer, primary_key=True)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
     src_ip = Column(String(50))
@@ -26,10 +26,10 @@ class Detection(Base):
     confidence = Column(Float)
     feature_data = Column(Text)  # JSON string of features
     packet_data = Column(Text)  # JSON string of packet
-    
+
     # Relationship with alerts
     alerts = relationship("Alert", back_populates="detection")
-    
+
     def to_dict(self):
         """Convert to dictionary for serialization"""
         return {
@@ -50,17 +50,17 @@ class Detection(Base):
 class Alert(Base):
     """Alerts generated for suspicious packets that need admin review"""
     __tablename__ = 'alerts'
-    
+
     id = Column(Integer, primary_key=True)
     detection_id = Column(Integer, ForeignKey('detections.id'))
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
     status = Column(String(20), default='pending')  # pending, confirmed, rejected
     admin_notes = Column(Text, nullable=True)
     reviewed_at = Column(DateTime, nullable=True)
-    
+
     # Relationship with detection
     detection = relationship("Detection", back_populates="alerts")
-    
+
     def to_dict(self):
         """Convert to dictionary for serialization"""
         return {
@@ -75,13 +75,13 @@ class Alert(Base):
 class ModelFeedback(Base):
     """Feedback data for model retraining"""
     __tablename__ = 'model_feedback'
-    
+
     id = Column(Integer, primary_key=True)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
     feature_data = Column(Text)  # JSON string of features
     label = Column(Integer)  # 0 for benign, 1 for malicious
     alert_id = Column(Integer, ForeignKey('alerts.id'), nullable=True)
-    
+
     def to_dict(self):
         """Convert to dictionary for serialization"""
         return {
@@ -95,7 +95,7 @@ class ModelFeedback(Base):
 class TrainingHistory(Base):
     """Record of model training sessions"""
     __tablename__ = 'training_history'
-    
+
     id = Column(Integer, primary_key=True)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
     model_type = Column(String(50))
@@ -107,7 +107,7 @@ class TrainingHistory(Base):
     f1_score = Column(Float)
     false_positive_rate = Column(Float)
     training_time = Column(Float)  # seconds
-    
+
     def to_dict(self):
         """Convert to dictionary for serialization"""
         return {
@@ -127,7 +127,7 @@ class TrainingHistory(Base):
 class DPISignature(Base):
     """Deep Packet Inspection signatures for detecting attack patterns"""
     __tablename__ = 'dpi_signatures'
-    
+
     id = Column(Integer, primary_key=True)
     name = Column(String(100), unique=True)
     pattern = Column(Text)
@@ -137,7 +137,7 @@ class DPISignature(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, 
                         onupdate=datetime.datetime.utcnow)
-    
+
     def to_dict(self):
         """Convert to dictionary for serialization"""
         return {
@@ -153,40 +153,42 @@ class DPISignature(Base):
 
 class NIDSDatabase:
     """Database manager for the NIDS application"""
-    
+
     def __init__(self, db_path='sqlite:///nids.db'):
         """Initialize the database connection"""
         self.engine = create_engine(db_path)
         self.Session = sessionmaker(bind=self.engine)
         self.session = None
-        
+
     def initialize(self):
-        """Create database tables if they don't exist"""
+        """Initialize the database"""
+        if not os.path.exists('nids.db'):
+            print("Creating new database...")
         Base.metadata.create_all(self.engine)
-        
+
     def get_session(self):
         """Get a new database session"""
         if self.session is None or not self.session.is_active:
             self.session = self.Session()
         return self.session
-        
+
     def close_session(self):
         """Close the current database session"""
         if self.session:
             self.session.close()
             self.session = None
-            
+
     # Detection methods
     def add_detection(self, packet, features, is_malicious, confidence):
         """Add a new detection record"""
         session = self.get_session()
-        
+
         # Convert feature array to JSON string
         if hasattr(features, 'tolist'):
             feature_json = json.dumps(features.tolist())
         else:
             feature_json = json.dumps(features)
-            
+
         # Create new detection record
         detection = Detection(
             timestamp=datetime.datetime.utcnow(),
@@ -201,112 +203,112 @@ class NIDSDatabase:
             feature_data=feature_json,
             packet_data=json.dumps(packet)
         )
-        
+
         session.add(detection)
         session.commit()
-        
+
         return detection.id
-    
+
     def get_detections(self, limit=100, offset=0, is_malicious=None):
         """Get detection records with optional filtering"""
         session = self.get_session()
-        
+
         query = session.query(Detection)
-        
+
         if is_malicious is not None:
             query = query.filter(Detection.is_malicious == is_malicious)
-            
+
         query = query.order_by(Detection.timestamp.desc())
         query = query.limit(limit).offset(offset)
-        
+
         detections = query.all()
         return [d.to_dict() for d in detections]
-    
+
     def get_detection_by_id(self, detection_id):
         """Get a specific detection by ID"""
         session = self.get_session()
         detection = session.query(Detection).filter(Detection.id == detection_id).first()
-        
+
         if detection:
             return detection.to_dict()
         return None
-    
+
     # Alert methods
     def add_alert(self, detection_id):
         """Add a new alert for admin review"""
         session = self.get_session()
-        
+
         alert = Alert(
             detection_id=detection_id,
             timestamp=datetime.datetime.utcnow(),
             status='pending'
         )
-        
+
         session.add(alert)
         session.commit()
-        
+
         return alert.id
-    
+
     def get_alerts(self, status=None, limit=100, offset=0):
         """Get alert records with optional filtering"""
         session = self.get_session()
-        
+
         query = session.query(Alert)
-        
+
         if status:
             query = query.filter(Alert.status == status)
-            
+
         query = query.order_by(Alert.timestamp.desc())
         query = query.limit(limit).offset(offset)
-        
+
         alerts = query.all()
         return [a.to_dict() for a in alerts]
-    
+
     def update_alert_status(self, alert_id, status, admin_notes=None):
         """Update the status of an alert after admin review"""
         session = self.get_session()
-        
+
         alert = session.query(Alert).filter(Alert.id == alert_id).first()
-        
+
         if alert:
             alert.status = status
             alert.admin_notes = admin_notes
             alert.reviewed_at = datetime.datetime.utcnow()
             session.commit()
             return True
-            
+
         return False
-    
+
     # Feedback methods
     def add_feedback(self, features, label, alert_id=None):
         """Add feedback data for model retraining"""
         session = self.get_session()
-        
+
         # Convert feature array to JSON string
         if hasattr(features, 'tolist'):
             feature_json = json.dumps(features.tolist())
         else:
             feature_json = json.dumps(features)
-            
+
         feedback = ModelFeedback(
             timestamp=datetime.datetime.utcnow(),
             feature_data=feature_json,
             label=int(label),
             alert_id=alert_id
         )
-        
+
         session.add(feedback)
         session.commit()
-        
+
         return feedback.id
-    
+
     def get_feedback_data(self, limit=1000):
         """Get feedback data for model retraining"""
         session = self.get_session()
-        
+
         feedback_records = session.query(ModelFeedback).order_by(
             ModelFeedback.timestamp.desc()).limit(limit).all()
-            
+
         return [
             {
                 'features': json.loads(record.feature_data) if record.feature_data else None,
@@ -315,12 +317,12 @@ class NIDSDatabase:
             }
             for record in feedback_records
         ]
-    
+
     # Training history methods
     def add_training_record(self, metrics, model_type='RL', training_type='initial', dataset_size=0, training_time=0):
         """Add a record of model training"""
         session = self.get_session()
-        
+
         record = TrainingHistory(
             timestamp=datetime.datetime.utcnow(),
             model_type=model_type,
@@ -333,29 +335,29 @@ class NIDSDatabase:
             false_positive_rate=metrics.get('false_positive_rate', 0.0),
             training_time=training_time
         )
-        
+
         session.add(record)
         session.commit()
-        
+
         return record.id
-    
+
     def get_training_history(self, limit=20):
         """Get history of model training sessions"""
         session = self.get_session()
-        
+
         records = session.query(TrainingHistory).order_by(
             TrainingHistory.timestamp.desc()).limit(limit).all()
-            
+
         return [record.to_dict() for record in records]
-    
+
     # DPI signature methods
     def add_dpi_signature(self, name, pattern, description=None, category='custom'):
         """Add a new DPI signature"""
         session = self.get_session()
-        
+
         # Check if signature with same name exists
         existing = session.query(DPISignature).filter(DPISignature.name == name).first()
-        
+
         if existing:
             # Update existing signature
             existing.pattern = pattern
@@ -364,7 +366,7 @@ class NIDSDatabase:
             existing.updated_at = datetime.datetime.utcnow()
             session.commit()
             return existing.id
-        
+
         # Create new signature
         signature = DPISignature(
             name=name,
@@ -373,50 +375,50 @@ class NIDSDatabase:
             category=category,
             is_active=True
         )
-        
+
         session.add(signature)
         session.commit()
-        
+
         return signature.id
-    
+
     def get_dpi_signatures(self, active_only=True):
         """Get all DPI signatures"""
         session = self.get_session()
-        
+
         query = session.query(DPISignature)
-        
+
         if active_only:
             query = query.filter(DPISignature.is_active == True)
-            
+
         signatures = query.all()
-        
+
         return [sig.to_dict() for sig in signatures]
-    
+
     def toggle_dpi_signature(self, signature_id, is_active):
         """Enable or disable a DPI signature"""
         session = self.get_session()
-        
+
         signature = session.query(DPISignature).filter(DPISignature.id == signature_id).first()
-        
+
         if signature:
             signature.is_active = bool(is_active)
             signature.updated_at = datetime.datetime.utcnow()
             session.commit()
             return True
-            
+
         return False
-    
+
     def delete_dpi_signature(self, signature_id):
         """Delete a DPI signature"""
         session = self.get_session()
-        
+
         signature = session.query(DPISignature).filter(DPISignature.id == signature_id).first()
-        
+
         if signature:
             session.delete(signature)
             session.commit()
             return True
-            
+
         return False
 
 # Create global instance
