@@ -188,10 +188,10 @@ if 'initialized' not in st.session_state:
     st.session_state.processed_alerts = []
     st.session_state.feedback_data = []
     st.session_state.traffic_rate_history = []
-    
+
     # Set default traffic ratios
     st.session_state.benign_ratio = 0.8  # 80% benign traffic by default
-    
+
     # Initialize stats
     st.session_state.stats = {
         'total_packets': 0,
@@ -211,7 +211,7 @@ if 'initialized' not in st.session_state:
     st.session_state.initialized = True
     st.session_state.current_attack = None
     st.session_state.last_update = datetime.now()
-    
+
     # Model metrics
     st.session_state.model_metrics = {
         "precision": 0.85,
@@ -223,7 +223,7 @@ if 'initialized' not in st.session_state:
         "improvement_rate": 0.0,
         "last_retrained": None
     }
-    
+
     # Statistics
     st.session_state.stats = {
         'total_packets': 0,
@@ -238,7 +238,7 @@ if 'initialized' not in st.session_state:
         'top_destinations': {},
         'port_distribution': {},
     }
-    
+
     # Network settings
     st.session_state.network_entities = {
         'internal_subnet': '192.168.1.0/24',
@@ -253,7 +253,7 @@ if 'initialized' not in st.session_state:
         },
         'clients': [f'192.168.1.{i}' for i in range(100, 200)]
     }
-    
+
     # Attack definitions
     st.session_state.attack_types = {
         'port_scan': {
@@ -287,11 +287,11 @@ if 'initialized' not in st.session_state:
             'duration': 40,
         }
     }
-    
+
     # Initialize packet generation queue
     st.session_state.packet_queue = deque(maxlen=1000)
     st.session_state.packet_batch = []
-    
+
     # Set initialized to True
     st.session_state.initialized = True
 
@@ -300,20 +300,20 @@ def format_bytes(size_bytes):
     """Format bytes to human-readable size"""
     if size_bytes == 0:
         return "0 B"
-    
+
     # Instead of using numpy, use standard math
     size_name = ("B", "KB", "MB", "GB", "TB")
-    
+
     # Calculate the logarithm manually
     i = 0
     size_float = float(size_bytes)
     while size_float >= 1024.0 and i < len(size_name) - 1:
         size_float /= 1024.0
         i += 1
-    
+
     # Round to 2 decimal places
     s = round(size_float, 2)
-    
+
     return f"{s} {size_name[i]}"
 
 def get_service_name(port):
@@ -354,24 +354,24 @@ def generate_packet(is_malicious=None):
             },
             'clients': [f'192.168.1.{i}' for i in range(100, 200)]
         }
-    
+
     # Determine if packet should be malicious based on benign ratio if not specified
     if is_malicious is None:
         # Default benign ratio if not set
         benign_ratio = 0.8
         if hasattr(st.session_state, 'benign_ratio'):
             benign_ratio = st.session_state.benign_ratio
-        
+
         is_malicious = random.random() > benign_ratio
-    
+
     # Generate timestamp
     timestamp = datetime.now().isoformat()
-    
+
     # Determine source and destination
     if is_malicious and st.session_state.attack_active and random.random() < 0.8:
         # Use the current attack details
         attack_type = st.session_state.current_attack
-        
+
         if attack_type == 'port_scan':
             src_ip = random.choice([
                 '203.0.113.10',  # External attacker
@@ -384,7 +384,7 @@ def generate_packet(is_malicious=None):
             dport = random.randint(1, 10000)
             flags = 2  # SYN flag
             payload = ''
-            
+
         elif attack_type == 'brute_force':
             src_ip = random.choice([
                 '203.0.113.20',  # External attacker
@@ -397,7 +397,7 @@ def generate_packet(is_malicious=None):
             dport = 22  # SSH
             flags = 24  # PSH+ACK
             payload = f"USER admin\r\nPASS {random.choice(['password', 'admin', '123456', 'root'])}\r\n"
-            
+
         elif attack_type == 'ddos':
             src_ip = f"203.0.113.{random.randint(1, 254)}"  # Random external IP
             dst_ip = st.session_state.network_entities['servers']['web_server']['ip']
@@ -406,7 +406,7 @@ def generate_packet(is_malicious=None):
             dport = 80  # HTTP
             flags = 2 if random.random() < 0.5 else 24  # SYN or PSH+ACK
             payload = "GET / HTTP/1.1\r\nHost: target.com\r\n\r\n" if flags == 24 else ""
-            
+
         elif attack_type == 'data_exfiltration':
             src_ip = random.choice(st.session_state.network_entities['clients'])  # Internal compromised host
             dst_ip = f"203.0.113.{random.randint(1, 254)}"  # External server
@@ -415,7 +415,7 @@ def generate_packet(is_malicious=None):
             dport = random.choice([443, 8080, 25])  # HTTPS, HTTP proxy, SMTP
             flags = 24  # PSH+ACK
             payload = "BEGIN_DATA:user_credentials.csv:BASE64DATA:dXNlcm5hbWUsaGFzaGVkX3Bhc3N3b3JkLGVtYWlsLGFkbWlu==END_DATA"
-            
+
         elif attack_type == 'malware_communication':
             src_ip = random.choice(st.session_state.network_entities['clients'])  # Internal infected host
             dst_ip = f"203.0.113.{random.randint(1, 254)}"  # C&C server
@@ -424,7 +424,7 @@ def generate_packet(is_malicious=None):
             dport = random.choice([80, 443, 53, 123])  # HTTP, HTTPS, DNS, NTP
             flags = 24  # PSH+ACK
             payload = '{"command":"update","id":"bot123","status":"active","system":"windows"}'
-            
+
         else:
             # Generic malicious packet
             if random.random() < 0.7:  # 70% external -> internal
@@ -433,17 +433,17 @@ def generate_packet(is_malicious=None):
             else:  # 30% internal -> external
                 src_ip = random.choice(st.session_state.network_entities['clients'])
                 dst_ip = f"203.0.113.{random.randint(1, 254)}"
-                
+
             proto = random.choice(['tcp', 'udp', 'icmp'])
             sport = random.randint(1024, 65000)
             dport = random.choice([22, 80, 443, 445, 3389, 3306])
             flags = random.choice([2, 16, 24]) if proto == 'tcp' else None
             payload = '{"data":"suspicious content"}'
-            
+
     else:
         # Generate benign traffic
         direction = random.random()
-        
+
         if direction < 0.6:  # 60% internal -> external
             src_ip = random.choice(st.session_state.network_entities['clients'])
             dst_ip = f"203.0.113.{random.randint(1, 254)}"
@@ -455,7 +455,7 @@ def generate_packet(is_malicious=None):
             src_ip = f"203.0.113.{random.randint(1, 254)}"
             server_type = random.choice(list(st.session_state.network_entities['servers'].keys()))
             dst_ip = st.session_state.network_entities['servers'][server_type]['ip']
-        
+
         # Determine protocol
         proto_rand = random.random()
         if proto_rand < 0.75:
@@ -464,7 +464,7 @@ def generate_packet(is_malicious=None):
             proto = 'udp'
         else:
             proto = 'icmp'
-        
+
         # Determine ports
         sport = random.randint(1024, 65000)
         if proto == 'tcp':
@@ -477,7 +477,7 @@ def generate_packet(is_malicious=None):
             dport = None
             sport = None
             flags = None
-        
+
         # Generate payload
         if proto == 'tcp' and dport == 80:
             payload = "GET /index.html HTTP/1.1\r\nHost: example.com\r\n\r\n" if random.random() < 0.5 else ""
@@ -485,7 +485,7 @@ def generate_packet(is_malicious=None):
             payload = '{"type":"client_hello","tls_version":"1.3"}' if random.random() < 0.5 else ""
         else:
             payload = '{"data":"normal traffic"}' if random.random() < 0.3 else ""
-    
+
     # Create packet with consistent schema
     packet = {
         "timestamp": timestamp,
@@ -495,18 +495,18 @@ def generate_packet(is_malicious=None):
         "len": random.randint(64, 1500),  # Random packet size
         "is_malicious": is_malicious,
     }
-    
+
     # Add protocol-specific fields
     if proto in ['tcp', 'udp']:
         packet["sport"] = sport
         packet["dport"] = dport
-    
+
     if proto == 'tcp' and flags is not None:
         packet["flags"] = flags
-    
+
     if payload:
         packet["payload"] = payload
-    
+
     return packet
 
 def update_stats_with_packet(packet):
@@ -514,20 +514,20 @@ def update_stats_with_packet(packet):
     # Update total counters
     st.session_state.stats['total_packets'] += 1
     st.session_state.stats['total_traffic'] += packet.get('len', 0)
-    
+
     # Update malicious/benign counters
     if packet.get('is_malicious', False):
         st.session_state.stats['malicious_packets'] += 1
     else:
         st.session_state.stats['benign_packets'] += 1
-    
+
     # Update protocol distribution
     proto = packet.get('proto', 'other').lower()
     if proto in st.session_state.stats['protocol_distribution']:
         st.session_state.stats['protocol_distribution'][proto] += 1
     else:
         st.session_state.stats['protocol_distribution']['other'] += 1
-    
+
     # Update source IP counts
     src_ip = packet.get('src')
     if src_ip:
@@ -535,7 +535,7 @@ def update_stats_with_packet(packet):
             st.session_state.stats['top_sources'][src_ip] += 1
         else:
             st.session_state.stats['top_sources'][src_ip] = 1
-    
+
     # Update destination IP counts
     dst_ip = packet.get('dst')
     if dst_ip:
@@ -543,7 +543,7 @@ def update_stats_with_packet(packet):
             st.session_state.stats['top_destinations'][dst_ip] += 1
         else:
             st.session_state.stats['top_destinations'][dst_ip] = 1
-    
+
     # Update port distribution
     dport = packet.get('dport')
     if dport:
@@ -560,18 +560,18 @@ def get_attack_description(packet):
     dport = packet.get('dport', 0)
     sport = packet.get('sport', 0)
     payload = packet.get('payload', '')
-    
+
     # TCP-specific patterns
     if proto == 'tcp':
         flags = packet.get('flags', 0)
-        
+
         if flags == 2 and random.random() < 0.7:  # SYN packet
             return f"Possible port scan from {src} targeting port {dport} on {dst}"
-        
+
         if dport == 22 or dport == 21:
             if payload and ('USER' in payload or 'PASS' in payload):
                 return f"Possible brute force attack on {'SSH' if dport == 22 else 'FTP'} service"
-        
+
         if dport == 80 or dport == 443:
             if payload and (("'" in payload and "SELECT" in payload) or ";" in payload or "--" in payload):
                 return "SQL Injection attempt detected"
@@ -579,45 +579,45 @@ def get_attack_description(packet):
                 return "Cross-site scripting (XSS) attempt detected"
             if random.random() < 0.3:
                 return "Suspicious HTTP traffic detected"
-    
+
     # UDP-specific patterns
     if proto == 'udp':
         if dport == 53:
             if payload and len(payload) > 100:
                 return "Possible DNS tunneling detected"
-        
+
         if dport > 1024 and sport > 1024:
             return "Suspicious UDP communication between unusual ports"
-    
+
     # ICMP patterns
     if proto == 'icmp':
         return "Suspicious ICMP packet detected, possible network mapping"
-    
+
     # Generic patterns
     if payload and "BASE64" in payload:
         return "Potential data exfiltration with encoded content"
-    
+
     if payload and any(term in payload for term in ["gate.php", "config.bin", "updates.js", "/admin/"]):
         return "Communication with potential C&C server detected"
-    
+
     # Default
     return "Anomalous network traffic detected"
 
 def generate_alert_for_packet(packet):
     """Generate an alert based on a malicious packet"""
     alert_id = f"alert_{int(time.time())}_{st.session_state.stats['alerts_generated']}"
-    
+
     # Generate random features for the packet (simplified)
     features = [random.random() for _ in range(10)]
-    
+
     # Generate confidence score
     if packet.get('is_malicious', False):
         confidence = random.uniform(0.7, 0.95)
     else:
         confidence = random.uniform(0.6, 0.75)
-    
+
     severity = 'High' if confidence > 0.85 else ('Medium' if confidence > 0.7 else 'Low')
-    
+
     # Create alert
     alert = {
         'id': alert_id,
@@ -632,10 +632,10 @@ def generate_alert_for_packet(packet):
         'confidence': confidence,
         'status': 'pending'
     }
-    
+
     # Update alerts statistics
     st.session_state.stats['alerts_generated'] += 1
-    
+
     return alert
 
 def update_network_data(batch_size=10):
@@ -648,7 +648,7 @@ def update_network_data(batch_size=10):
             st.session_state.alert_history = []
         if 'pending_alerts' not in st.session_state:
             st.session_state.pending_alerts = []
-        
+
         # Make sure all required session state variables are initialized
         if 'stats' not in st.session_state:
             st.session_state.stats = {
@@ -664,13 +664,13 @@ def update_network_data(batch_size=10):
                 'top_destinations': {},
                 'port_distribution': {},
             }
-        
+
         if 'attack_active' not in st.session_state:
             st.session_state.attack_active = False
-        
+
         if 'current_attack' not in st.session_state:
             st.session_state.current_attack = None
-            
+
         # Initialize network entities if not already initialized
         if 'network_entities' not in st.session_state:
             st.session_state.network_entities = {
@@ -686,10 +686,10 @@ def update_network_data(batch_size=10):
                 },
                 'clients': [f'192.168.1.{i}' for i in range(100, 200)]
             }
-            
+
         # Initialize generated packets array
         new_packets = []
-        
+
         # Generate packets
         for _ in range(batch_size):
             # Generate packet with controlled ratio of malicious packets
@@ -703,41 +703,41 @@ def update_network_data(batch_size=10):
                 benign_ratio = 0.8
                 if hasattr(st.session_state, 'benign_ratio'):
                     benign_ratio = st.session_state.benign_ratio
-                
+
                 is_malicious = random.random() > benign_ratio
-                
+
             # Generate the packet
             packet = generate_packet(is_malicious=is_malicious)
             new_packets.append(packet)
-            
+
             # Add to detection history
             st.session_state.detection_history.append(packet)
-            
+
             # Limit detection history size
             if len(st.session_state.detection_history) > 1000:
                 st.session_state.detection_history = st.session_state.detection_history[-1000:]
-            
+
             # Update statistics with the new packet
             update_stats_with_packet(packet)
-            
+
             # Generate alert for malicious packets and some false positives
             if packet.get('is_malicious', False) or (random.random() < 0.05):  # 5% chance for false positives
                 alert = generate_alert_for_packet(packet)
-                
+
                 # Add to alert history
                 st.session_state.alert_history.append(alert)
-                
+
                 # Limit alert history size
                 if len(st.session_state.alert_history) > 100:
                     st.session_state.alert_history = st.session_state.alert_history[-100:]
-                
+
                 # Add to pending alerts
                 st.session_state.pending_alerts.append(alert)
-                
+
                 # Update alert count
                 if 'stats' in st.session_state and 'alerts_generated' in st.session_state.stats:
                     st.session_state.stats['alerts_generated'] += 1
-        
+
         # Return the generated packets
         return new_packets
     except Exception as e:
@@ -748,14 +748,14 @@ def start_attack(attack_type):
     """Start a simulated attack"""
     if attack_type not in st.session_state.attack_types:
         return False
-    
+
     st.session_state.attack_active = True
     st.session_state.current_attack = attack_type
-    
+
     # Calculate end time based on attack duration
     attack_duration = st.session_state.attack_types[attack_type]['duration']
     end_time = datetime.now() + timedelta(seconds=attack_duration)
-    
+
     # Store attack information
     st.session_state.attack_info = {
         'type': attack_type,
@@ -764,22 +764,22 @@ def start_attack(attack_type):
         'source_ip': f"203.0.113.{random.randint(1, 254)}",
         'packets_generated': 0
     }
-    
+
     # During active attack, we'll set benign ratio lower to generate more attacks
     st.session_state.previous_benign_ratio = st.session_state.benign_ratio
     st.session_state.benign_ratio = 0.3  # 70% of packets will be malicious
-    
+
     return True
 
 def stop_attack():
     """Stop the current attack"""
     st.session_state.attack_active = False
     st.session_state.current_attack = None
-    
+
     # Restore previous benign ratio
     if hasattr(st.session_state, 'previous_benign_ratio'):
         st.session_state.benign_ratio = st.session_state.previous_benign_ratio
-    
+
     # Clear attack info
     st.session_state.attack_info = None
 
@@ -790,26 +790,26 @@ def simulation_loop():
         # Set up thread-local storage to prevent StrictConcurrency issues
         thread_local = threading.local()
         thread_local.simulator_running = True
-        
+
         # Make sure thread can access session state variables safely
         simulator_running = True
         attack_active = False
         last_update_time = time.time()
-        
+
         # Use session state values to initialize at thread start
         if hasattr(st.session_state, 'simulator_running'):
             simulator_running = st.session_state.simulator_running
-        
+
         if hasattr(st.session_state, 'attack_active'):
             attack_active = st.session_state.attack_active
-            
+
         # Exit if simulator is not configured to run
         if not simulator_running:
             print("Simulator not configured to run. Exiting thread.")
             return
-            
+
         print(f"Thread started with simulator running: {simulator_running}")
-            
+
         # Main simulation loop
         while simulator_running:
             try:
@@ -819,12 +819,12 @@ def simulation_loop():
                     if not simulator_running:
                         print("Simulator was stopped externally. Exiting thread.")
                         break
-                
+
                 # Check attack status
                 attack_active = False
                 if hasattr(st.session_state, 'attack_active'):
                     attack_active = st.session_state.attack_active
-                
+
                 # Check if attack has ended
                 if attack_active and hasattr(st.session_state, 'attack_info') and st.session_state.attack_info is not None:
                     attack_end_time = st.session_state.attack_info['end_time']
@@ -834,10 +834,10 @@ def simulation_loop():
                         # but we can update the flag and let the main thread handle it
                         st.session_state.attack_active = False
                         attack_active = False
-                
+
                 # Record time before generating packets
                 start_time = time.time()
-                
+
                 # Generate varying batch sizes for more realistic traffic
                 batch_size = 5
                 if attack_active:
@@ -846,7 +846,7 @@ def simulation_loop():
                 else:
                     # Normal traffic
                     batch_size = random.randint(3, 8)
-                
+
                 # Generate packet batch - this function has thread-safe operations
                 try:
                     packets = update_network_data(batch_size=batch_size)
@@ -854,12 +854,12 @@ def simulation_loop():
                 except Exception as packet_error:
                     print(f"Error generating packets: {str(packet_error)}")
                     packets = []
-                
+
                 # Update simulation metrics
                 elapsed = time.time() - start_time
                 packets_per_second = batch_size / elapsed if elapsed > 0 else 0
                 last_update_time = time.time()
-                
+
                 # Record the packets per second (for metrics)
                 # Need to do this in a thread-safe way
                 if hasattr(st.session_state, 'traffic_rate_history'):
@@ -874,13 +874,13 @@ def simulation_loop():
                 else:
                     # Create if doesn't exist
                     st.session_state.traffic_rate_history = [packets_per_second]
-                
+
                 # Sleep to simulate realistic packet arrival (varies by traffic type)
                 if attack_active:
                     time.sleep(0.5)  # Faster during attacks
                 else:
                     time.sleep(1.0)  # Normal traffic pace
-                    
+
             except Exception as e:
                 print(f"Error in simulation iteration: {str(e)}")
                 time.sleep(2)  # Wait before retrying
@@ -891,31 +891,31 @@ def simulation_loop():
             st.session_state.simulator_running = False
         if hasattr(st.session_state, 'monitoring_active'):
             st.session_state.monitoring_active = False
-    
+
     print("Network simulation thread exiting.")
 
 def start_simulation():
     """Start the packet simulation in a background thread"""
     print("Starting network packet simulation...")
-    
+
     # Make sure session state is properly initialized
     if 'simulator_running' not in st.session_state:
         st.session_state.simulator_running = False
-    
+
     if 'detection_history' not in st.session_state:
         st.session_state.detection_history = []
-    
+
     if 'alert_history' not in st.session_state:
         st.session_state.alert_history = []
-        
+
     if 'pending_alerts' not in st.session_state:
         st.session_state.pending_alerts = []
-    
+
     # If already running, don't start a new thread
     if st.session_state.simulator_running:
         print("Simulation already running. Not starting a new thread.")
         return True
-    
+
     # Initialize network entities if not already done
     if 'network_entities' not in st.session_state:
         # Create network structure for simulated traffic
@@ -932,29 +932,29 @@ def start_simulation():
             },
             'clients': [f'192.168.1.{i}' for i in range(100, 200)]
         }
-    
+
     # Set the flag and start the thread
     st.session_state.simulator_running = True
-    
+
     # Generate initial packets to have some data
     print("Generating initial batch of packets...")
     update_network_data(batch_size=15)
-    
+
     try:
         # Check that thread isn't already running
         active_threads = [t.name for t in threading.enumerate() if t.is_alive()]
         if 'NIDS-Simulator' in active_threads:
             print("Simulator thread is already running!")
             return True
-        
+
         print("Starting background simulation thread...")
         simulation_thread = threading.Thread(target=simulation_loop, name="NIDS-Simulator")
         simulation_thread.daemon = True
         simulation_thread.start()
-        
+
         # Give the thread a moment to initialize
         time.sleep(0.5)
-        
+
         # Verify thread started properly
         if simulation_thread.is_alive():
             print(f"Simulation thread started successfully: {simulation_thread.name}")
@@ -973,26 +973,26 @@ def start_simulation():
 def stop_simulation():
     """Stop the packet simulation"""
     print("Stopping network simulation...")
-    
+
     # Make sure session state is properly initialized
     if 'simulator_running' not in st.session_state:
         st.session_state.simulator_running = False
-        
+
     if 'monitoring_active' not in st.session_state:
         st.session_state.monitoring_active = False
-        
+
     if 'attack_active' not in st.session_state:
         st.session_state.attack_active = False
-    
+
     # Set flags to stop all simulation activities
     st.session_state.simulator_running = False
     st.session_state.monitoring_active = False
-    
+
     # Stop any active attack
     if st.session_state.attack_active:
         st.session_state.attack_active = False
         print("Stopping active attack simulation")
-    
+
     # Check if thread is still running
     active_threads = [t.name for t in threading.enumerate() if t.is_alive()]
     if 'NIDS-Simulator' in active_threads:
@@ -1018,10 +1018,10 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # Tab 1: Main Dashboard
 with tab1:
     st.header("System Dashboard")
-    
+
     # Control Panel
     control_col1, control_col2, control_col3 = st.columns(3)
-    
+
     with control_col1:
         if not st.session_state.monitoring_active:
             if st.button("Start Monitoring System", type="primary", key="start_monitor"):
@@ -1032,11 +1032,11 @@ with tab1:
                     st.session_state.alert_history = []
                 if 'pending_alerts' not in st.session_state:
                     st.session_state.pending_alerts = []
-                    
+
                 # Start background monitor (which now generates initial data)
                 st.session_state.monitoring_active = True
                 success = start_simulation()
-                
+
                 if success:
                     st.success("✅ Monitoring system started. Network traffic is now being analyzed.")
                     time.sleep(1)  # Give time for initial data to be generated
@@ -1048,7 +1048,7 @@ with tab1:
             if st.button("Stop Monitoring System", type="primary", key="stop_monitor"):
                 stop_simulation()
                 st.warning("⚠️ Monitoring system stopped.")
-    
+
     with control_col2:
         # Allow setting the benign/malicious traffic ratio
         st.session_state.benign_ratio = st.slider(
@@ -1059,41 +1059,21 @@ with tab1:
             step=0.1,
             help="Higher values mean less malicious traffic"
         )
-    
+
     with control_col3:
         # First show monitoring status
         if st.session_state.monitoring_active:
             st.success("System is actively monitoring network traffic")
         else:
             st.warning("System monitoring is inactive")
-        
+
         # Then add FPGA acceleration controls
-        # Add FPGA hardware acceleration toggle
-        if 'fpga_acceleration' not in st.session_state:
-            st.session_state.fpga_acceleration = True
-            
-        fpga_enabled = st.checkbox("Enable FPGA Hardware Acceleration", 
-                                  value=st.session_state.fpga_acceleration,
-                                  help="Toggle PYNQ-Z1 FPGA hardware acceleration for packet processing")
-        
-        # Update state and FPGA interface
-        if fpga_enabled != st.session_state.fpga_acceleration:
-            st.session_state.fpga_acceleration = fpga_enabled
-            if fpga_enabled:
-                fpga_interface.enable_acceleration()
-            else:
-                fpga_interface.disable_acceleration()
-        
-        # Show current acceleration mode
-        if fpga_enabled:
-            st.info("🔋 FPGA hardware acceleration enabled (Simulation mode)")
-        else:
-            st.info("💻 Using software-only processing mode")
-    
+        # Performance controls will be shown here
+
     # Main metrics
     st.subheader("Real-time Network Metrics")
     metric_col1, metric_col2, metric_col3, metric_col4, metric_col5 = st.columns(5)
-    
+
     with metric_col1:
         st.markdown(f"""
         <div class="metric-container">
@@ -1101,7 +1081,7 @@ with tab1:
             <div class="metric-label">Packets Analyzed</div>
         </div>
         """, unsafe_allow_html=True)
-    
+
     with metric_col2:
         malicious_percentage = 0
         if st.session_state.stats['total_packets'] > 0:
@@ -1113,7 +1093,7 @@ with tab1:
             <div class="metric-label">Malicious Traffic</div>
         </div>
         """, unsafe_allow_html=True)
-    
+
     with metric_col3:
         st.markdown(f"""
         <div class="metric-container">
@@ -1121,7 +1101,7 @@ with tab1:
             <div class="metric-label">Traffic Volume</div>
         </div>
         """, unsafe_allow_html=True)
-    
+
     with metric_col4:
         st.markdown(f"""
         <div class="metric-container">
@@ -1129,7 +1109,7 @@ with tab1:
             <div class="metric-label">Alerts Generated</div>
         </div>
         """, unsafe_allow_html=True)
-    
+
     with metric_col5:
         st.markdown(f"""
         <div class="metric-container">
@@ -1137,45 +1117,19 @@ with tab1:
             <div class="metric-label">Pending Alerts</div>
         </div>
         """, unsafe_allow_html=True)
-    
-    # FPGA Hardware Acceleration Metrics
-    if st.session_state.fpga_acceleration:
-        st.subheader("FPGA Hardware Acceleration Metrics")
-        
-        # Get performance metrics from FPGA interface
-        perf_metrics = fpga_interface.get_performance_metrics()
-        
-        # Create metrics columns
-        fpga_col1, fpga_col2, fpga_col3, fpga_col4 = st.columns(4)
-        
-        with fpga_col1:
-            st.metric("Processing Mode", "Hardware (Simulated)", 
-                    help="Current packet processing mode - hardware acceleration or software only")
-            
-        with fpga_col2:
-            st.metric("Packets Processed", perf_metrics["packets_processed"], 
-                    help="Total number of packets processed by the FPGA")
-        
-        with fpga_col3:
-            st.metric("Hardware Accelerated", perf_metrics["hardware_accelerated"], 
-                    help="Number of packets processed with hardware acceleration")
-            
-        with fpga_col4:
-            # Convert to milliseconds and format with 2 decimal places
-            avg_time = f"{perf_metrics['avg_processing_time']*1000:.2f} ms"
-            st.metric("Avg. Processing Time", avg_time, 
-                    help="Average time to process a packet")
-    
+
+    # Performance metrics will be shown here
+
     # Attack simulation section
     st.subheader("Attack Simulation")
-    
+
     attack_col1, attack_col2 = st.columns(2)
-    
+
     with attack_col1:
         attack_options = ["None"] + [f"{details['name']} ({details['severity']})" 
                                     for attack_id, details in st.session_state.attack_types.items()]
         selected_attack_display = st.selectbox("Select Attack Type", attack_options, key="attack_select")
-        
+
         # Extract attack_id from the display name
         if selected_attack_display != "None":
             for attack_id, details in st.session_state.attack_types.items():
@@ -1185,10 +1139,10 @@ with tab1:
                     break
         else:
             selected_attack_id = None
-    
+
     with attack_col2:
         attack_button_disabled = not st.session_state.monitoring_active or selected_attack_id is None or st.session_state.attack_active
-        
+
         if not st.session_state.attack_active:
             start_attack_button = st.button(
                 "Launch Selected Attack", 
@@ -1207,18 +1161,18 @@ with tab1:
             attack_info = st.session_state.attack_info
             attack_details = st.session_state.attack_types[attack_info['type']]
             time_left = max(0, (attack_info['end_time'] - datetime.now()).total_seconds())
-            
+
             st.warning(f"⚠️ Active attack: {attack_details['name']} ({time_left:.1f}s remaining)")
-            
+
             if st.button("Stop Attack", key="stop_attack"):
                 stop_attack()
                 st.success("Attack simulation stopped.")
-    
+
     # If attack is active, show some details
     if st.session_state.attack_active and hasattr(st.session_state, 'attack_info') and st.session_state.attack_info is not None:
         attack_info = st.session_state.attack_info
         attack_details = st.session_state.attack_types[attack_info['type']]
-        
+
         st.markdown(f"""
         <div class="alert-box alert-danger">
             <h3>🚨 Active Attack Simulation: {attack_details['name']}</h3>
@@ -1227,26 +1181,26 @@ with tab1:
             <p><strong>Started:</strong> {attack_info['start_time'].strftime('%H:%M:%S')}</p>
         </div>
         """, unsafe_allow_html=True)
-    
+
     # Show recent activity
     st.subheader("Recent Activity")
-    
+
     activity_col1, activity_col2 = st.columns(2)
-    
+
     with activity_col1:
         st.markdown("### Traffic Pattern")
-        
+
         if len(st.session_state.detection_history) > 0:
             # Group by minute and malicious status
             df = pd.DataFrame(st.session_state.detection_history[-100:])  # Last 100 packets
-            
+
             if not df.empty and 'timestamp' in df.columns:
                 df['timestamp'] = pd.to_datetime(df['timestamp'])
-                
+
                 # Group by minute and malicious status
                 df['minute'] = df['timestamp'].dt.floor('1min')
                 traffic_df = df.groupby(['minute', 'is_malicious']).size().reset_index(name='count')
-                
+
                 # Create traffic chart
                 fig = px.line(
                     traffic_df, 
@@ -1257,31 +1211,31 @@ with tab1:
                     color_discrete_map={True: '#E53935', False: '#4CAF50'},
                     title='Network Traffic (per minute)'
                 )
-                
+
                 fig.update_layout(
                     height=300,
                     xaxis_title="",
                     yaxis_title="Packet Count",
                     legend_title=""
                 )
-                
+
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info("Waiting for traffic data...")
         else:
             st.info("Start the monitoring system to see traffic patterns.")
-    
+
     with activity_col2:
         st.markdown("### Protocol Distribution")
-        
+
         proto_counts = st.session_state.stats['protocol_distribution']
-        
+
         if sum(proto_counts.values()) > 0:
             proto_df = pd.DataFrame([
                 {'Protocol': proto.upper(), 'Count': count}
                 for proto, count in proto_counts.items() if count > 0
             ])
-            
+
             # Create protocol chart
             fig = px.pie(
                 proto_df,
@@ -1290,13 +1244,13 @@ with tab1:
                 color_discrete_sequence=px.colors.qualitative.Bold,
                 hole=0.4
             )
-            
+
             fig.update_layout(
                 height=300,
                 margin=dict(l=20, r=20, t=30, b=20),
                 legend=dict(orientation="h", yanchor="bottom", y=-0.1)
             )
-            
+
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Waiting for protocol data...")
@@ -1304,34 +1258,34 @@ with tab1:
 # Tab 2: Network Monitor
 with tab2:
     st.header("Network Traffic Monitor")
-    
+
     monitor_col1, monitor_col2 = st.columns([3, 1])
-    
+
     with monitor_col1:
         st.subheader("Live Network Traffic")
         if not st.session_state.monitoring_active:
             st.warning("Network monitoring is not active. Start monitoring from the Dashboard tab.")
-    
+
     with monitor_col2:
         if st.session_state.monitoring_active:
             refresh_clicked = st.button("Refresh Data", key="refresh_monitor")
             if refresh_clicked:
                 update_network_data(batch_size=10)
                 st.success("Data refreshed.")
-    
+
     # Show packet inspection table
     if st.session_state.monitoring_active:
         last_packets = st.session_state.detection_history[-15:] if st.session_state.detection_history else []
-        
+
         if last_packets:
             packet_table_data = []
-            
+
             # Convert packets to table format
             for packet in reversed(last_packets):  # Show newest first
                 timestamp = packet.get('timestamp', '')
                 if isinstance(timestamp, str) and 'T' in timestamp:
                     timestamp = timestamp.split('T')[1][:12]
-                
+
                 entry = {
                     'Time': timestamp,
                     'Source': packet.get('src', 'Unknown'),
@@ -1340,22 +1294,22 @@ with tab2:
                     'Length': packet.get('len', 0),
                     'Status': '🔴 Malicious' if packet.get('is_malicious', False) else '🟢 Benign'
                 }
-                
+
                 # Add protocol-specific fields
                 if packet.get('proto') in ['tcp', 'udp']:
                     entry['Src Port'] = packet.get('sport', '-')
                     entry['Dst Port'] = packet.get('dport', '-')
-                    
+
                     if packet.get('dport'):
                         service = get_service_name(packet.get('dport'))
                         if service != 'Unknown':
                             entry['Service'] = service
-                
+
                 packet_table_data.append(entry)
-            
+
             # Create dataframe
             packet_df = pd.DataFrame(packet_table_data)
-            
+
             # Show dataframe with conditional formatting
             st.dataframe(
                 packet_df.style.apply(
@@ -1367,19 +1321,19 @@ with tab2:
             )
         else:
             st.info("No packets captured yet. Start monitoring to see network traffic.")
-    
+
     # Network Flow Visualization
     st.subheader("Network Flow Analysis")
-    
+
     if st.session_state.detection_history:
         # Take the last 100 packets for analysis
         flow_packets = st.session_state.detection_history[-100:]
-        
+
         # Extract unique source and destination IPs
         sources = set(p.get('src') for p in flow_packets if 'src' in p)
         destinations = set(p.get('dst') for p in flow_packets if 'dst' in p)
         all_ips = list(sources.union(destinations))
-        
+
         # Count connections between IPs
         connections = {}
         for packet in flow_packets:
@@ -1388,7 +1342,7 @@ with tab2:
             if src and dst:
                 key = (src, dst)
                 is_malicious = packet.get('is_malicious', False)
-                
+
                 if key in connections:
                     connections[key]['count'] += 1
                     if is_malicious:
@@ -1398,13 +1352,13 @@ with tab2:
                         'count': 1,
                         'malicious_count': 1 if is_malicious else 0
                     }
-        
+
         # Create a dataframe for plotting
         edges = []
         for (src, dst), data in connections.items():
             malicious_ratio = data['malicious_count'] / data['count']
             color = f"rgba({int(255 * malicious_ratio)}, {int(255 * (1-malicious_ratio))}, 0, 0.8)"
-            
+
             edges.append({
                 'source': src,
                 'target': dst,
@@ -1413,9 +1367,9 @@ with tab2:
                 'malicious_ratio': malicious_ratio,
                 'color': color
             })
-        
+
         edges_df = pd.DataFrame(edges)
-        
+
         if not edges_df.empty:
             # Create network graph using plotly
             node_x = []
@@ -1423,12 +1377,12 @@ with tab2:
             node_text = []
             node_type = []
             node_size = []
-            
+
             # Create a simple circular layout
             angle_step = 2 * np.pi / len(all_ips)
             for i, ip in enumerate(all_ips):
                 angle = i * angle_step
-                
+
                 if '192.168.' in ip:  # Internal network
                     radius = 0.7
                     node_type.append('internal')
@@ -1438,24 +1392,24 @@ with tab2:
                 else:  # External
                     radius = 1.3
                     node_type.append('external')
-                
+
                 # Add to node lists
                 x, y = radius * np.cos(angle), radius * np.sin(angle)
                 node_x.append(x)
                 node_y.append(y)
                 node_text.append(ip)
-                
+
                 # Set node size based on number of connections
                 src_count = len([e for e in edges if e['source'] == ip])
                 dst_count = len([e for e in edges if e['target'] == ip])
                 node_size.append(10 + (src_count + dst_count))
-            
+
             # Create a lookup from IP to x,y coordinates
             pos = {ip: (node_x[i], node_y[i]) for i, ip in enumerate(all_ips)}
-            
+
             # Create node trace
             node_color = ['blue' if t == 'internal' else 'orange' if t == 'dmz' else 'red' for t in node_type]
-            
+
             node_trace = go.Scatter(
                 x=node_x, y=node_y,
                 mode='markers+text',
@@ -1469,14 +1423,14 @@ with tab2:
                     line=dict(width=1, color='#888')
                 )
             )
-            
+
             # Create edge traces - one trace per edge with its own color
             edge_traces = []
-            
+
             for edge in edges:
                 x0, y0 = pos[edge['source']]
                 x1, y1 = pos[edge['target']]
-                
+
                 edge_trace = go.Scatter(
                     x=[x0, x1, None],
                     y=[y0, y1, None],
@@ -1484,9 +1438,9 @@ with tab2:
                     line=dict(width=1.5, color=edge['color']),
                     hoverinfo='none'
                 )
-                
+
                 edge_traces.append(edge_trace)
-            
+
             # Create the figure with all traces
             all_traces = edge_traces + [node_trace]
             fig = go.Figure(data=all_traces,
@@ -1499,7 +1453,7 @@ with tab2:
                               height=600,
                               plot_bgcolor='rgba(240, 240, 240, 0.8)'
                           ))
-            
+
             # Add a legend
             annotations = [
                 dict(
@@ -1538,35 +1492,35 @@ with tab2:
                     font=dict(color="red", size=12)
                 ),
             ]
-            
+
             fig.update_layout(annotations=annotations)
-            
+
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Insufficient flow data. Wait for more packets to be captured.")
     else:
         st.info("No network traffic data available. Start monitoring to see network flow visualization.")
-    
+
     # Top IPs and Ports
     ip_col1, ip_col2 = st.columns(2)
-    
+
     with ip_col1:
         st.subheader("Top Source IPs")
-        
+
         top_sources = sorted(
             st.session_state.stats['top_sources'].items(),
             key=lambda x: x[1],
             reverse=True
         )[:10]
-        
+
         if top_sources:
             top_src_df = pd.DataFrame(top_sources, columns=['IP', 'Count'])
-            
+
             # Determine if IP is internal or external
             top_src_df['Network'] = top_src_df['IP'].apply(
                 lambda ip: 'Internal' if ip.startswith(('192.168.', '10.', '172.16.')) else 'External'
             )
-            
+
             fig = px.bar(
                 top_src_df,
                 x='Count',
@@ -1576,29 +1530,30 @@ with tab2:
                 color_discrete_map={'Internal': '#1E88E5', 'External': '#E53935'},
                 title='Top Source IP Addresses'
             )
-            
+
             fig.update_layout(height=350, yaxis={'categoryorder': 'total ascending'})
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No source IP data available yet.")
-    
+
     with ip_col2:
         st.subheader("Top Destination IPs")
-        
+
+        ```python
         top_destinations = sorted(
             st.session_state.stats['top_destinations'].items(),
             key=lambda x: x[1],
             reverse=True
         )[:10]
-        
+
         if top_destinations:
             top_dst_df = pd.DataFrame(top_destinations, columns=['IP', 'Count'])
-            
+
             # Determine if IP is internal or external
             top_dst_df['Network'] = top_dst_df['IP'].apply(
                 lambda ip: 'Internal' if ip.startswith(('192.168.', '10.', '172.16.')) else 'External'
             )
-            
+
             fig = px.bar(
                 top_dst_df,
                 x='Count',
@@ -1608,7 +1563,7 @@ with tab2:
                 color_discrete_map={'Internal': '#1E88E5', 'External': '#E53935'},
                 title='Top Destination IP Addresses'
             )
-            
+
             fig.update_layout(height=350, yaxis={'categoryorder': 'total ascending'})
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -1617,46 +1572,46 @@ with tab2:
 # Tab 3: Alert Management
 with tab3:
     st.header("Security Alert Management")
-    
+
     # Add demo alert generator
     demo_col1, demo_col2 = st.columns([3, 1])
-    
+
     with demo_col1:
         st.markdown("""
         This section allows you to review and respond to security alerts generated by the NIDS. 
         Each alert requires admin feedback to help train the system and reduce false positives over time.
         """)
-    
+
     with demo_col2:
         if st.button("Generate Demo Alerts", key="gen_demo_alerts"):
             # Generate sample alerts with different characteristics
             sample_count = 5
             alert_types = ['port_scan', 'brute_force', 'ddos', 'data_exfiltration', 'malware_communication']
-            
+
             for i in range(sample_count):
                 attack_type = random.choice(alert_types)
-                
+
                 # Generate a simulated attack packet
                 packet = generate_packet(is_malicious=True)
                 packet['attack_type'] = attack_type
-                
+
                 # Create an alert
                 alert = generate_alert_for_packet(packet)
-                
+
                 # Add to pending alerts
                 st.session_state.pending_alerts.append(alert)
-                
+
                 # Add to alert history
                 st.session_state.alert_history.append(alert)
-                
+
                 # Update stats
                 st.session_state.stats['alerts_generated'] += 1
-                
+
             st.success(f"Generated {sample_count} demo alerts for testing.")
-    
+
     # Alert counter
     alert_count = len(st.session_state.pending_alerts)
-    
+
     if alert_count > 0:
         st.markdown(f"""
         <div class="alert-box alert-warning">
@@ -1670,17 +1625,17 @@ with tab3:
             <p>The system is monitoring for threats. Generate demo alerts to test the feedback workflow.</p>
         </div>
         """, unsafe_allow_html=True)
-    
+
     # Process pending alerts
     if st.session_state.pending_alerts:
         for i, alert in enumerate(st.session_state.pending_alerts[:5]):  # Show only first 5 to avoid UI clutter
             with st.expander(f"Alert #{i+1} - {alert['description']} ({alert['severity']} severity)", expanded=i==0):
                 # Create three columns: details, packet, and actions
                 alert_col1, alert_col2 = st.columns([3, 2])
-                
+
                 with alert_col1:
                     st.subheader("Alert Details")
-                    
+
                     st.markdown(f"""
                     **Source IP:** {alert['src_ip']}  
                     **Destination IP:** {alert['dst_ip']}  
@@ -1688,121 +1643,121 @@ with tab3:
                     **Timestamp:** {alert['timestamp']}  
                     **Confidence:** {alert['confidence']:.2f}  
                     **Severity:** {alert['severity']}  
-                    
+
                     **Description:**  
                     {alert['description']}
                     """)
-                    
+
                     # Show packet features
                     if 'features' in alert and alert['features']:
                         st.subheader("Extracted Features")
-                        
+
                         feature_df = pd.DataFrame({
                             'Feature': [f'Feature {i+1}' for i in range(len(alert['features']))],
                             'Value': alert['features']
                         })
-                        
+
                         st.dataframe(feature_df, use_container_width=True)
-                
+
                 with alert_col2:
                     st.subheader("Packet Details")
-                    
+
                     # Simplified packet display
                     packet_info = {}
                     for key, value in alert['packet'].items():
                         if key != 'features':  # Skip large arrays
                             packet_info[key] = value
-                    
+
                     st.json(packet_info)
-                
+
                 # Action buttons
                 action_col1, action_col2, action_col3 = st.columns([1, 1, 1])
-                
+
                 # Track alert state
                 alert_id = alert['id']
-                
+
                 # Initialize feedback state variables for this alert if not present
                 if f"confirmed_{alert_id}" not in st.session_state:
                     st.session_state[f"confirmed_{alert_id}"] = False
                 if f"rejected_{alert_id}" not in st.session_state:
                     st.session_state[f"rejected_{alert_id}"] = False
-                
+
                 with action_col1:
                     confirm_clicked = st.button(
                         "✅ Confirm Threat", 
                         key=f"confirm_{alert_id}",
                         disabled=st.session_state[f"confirmed_{alert_id}"] or st.session_state[f"rejected_{alert_id}"]
                     )
-                    
+
                     if confirm_clicked:
                         st.session_state[f"confirmed_{alert_id}"] = True
                         alert['status'] = 'confirmed'
                         st.session_state.stats['alerts_confirmed'] += 1
-                        
+
                         # Move to processed alerts
                         st.session_state.processed_alerts.append(alert)
-                        
+
                         # Add feedback data
                         st.session_state.feedback_data.append({
                             'features': alert['features'],
                             'label': 1,  # Confirmed as malicious
                             'timestamp': datetime.now().isoformat()
                         })
-                        
+
                         st.success("Alert confirmed as malicious and used for model training.")
-                
+
                 with action_col2:
                     reject_clicked = st.button(
                         "❌ False Positive", 
                         key=f"reject_{alert_id}",
                         disabled=st.session_state[f"confirmed_{alert_id}"] or st.session_state[f"rejected_{alert_id}"]
                     )
-                    
+
                     if reject_clicked:
                         st.session_state[f"rejected_{alert_id}"] = True
                         alert['status'] = 'rejected'
                         st.session_state.stats['alerts_rejected'] += 1
-                        
+
                         # Move to processed alerts
                         st.session_state.processed_alerts.append(alert)
-                        
+
                         # Add feedback data
                         st.session_state.feedback_data.append({
                             'features': alert['features'],
                             'label': 0,  # Rejected as benign
                             'timestamp': datetime.now().isoformat()
                         })
-                        
+
                         st.info("Alert rejected as false positive and used for model training.")
-                
+
                 with action_col3:
                     needs_analysis_clicked = st.button(
                         "🔍 Needs More Analysis", 
                         key=f"analyze_{alert_id}",
                         disabled=st.session_state[f"confirmed_{alert_id}"] or st.session_state[f"rejected_{alert_id}"]
                     )
-                    
+
                     if needs_analysis_clicked:
                         st.session_state[f"confirmed_{alert_id}"] = True  # Mark as processed
                         alert['status'] = 'needs_analysis'
-                        
+
                         # Move to processed alerts
                         st.session_state.processed_alerts.append(alert)
-                        
+
                         st.warning("Alert marked for further analysis.")
-        
+
         # Button to clear processed alerts
         processed_alerts_exist = False
-        
+
         for alert in st.session_state.pending_alerts:
             alert_id = f"confirmed_{alert['id']}"
             reject_id = f"rejected_{alert['id']}"
-            
+
             if (alert_id in st.session_state and st.session_state[alert_id]) or \
                (reject_id in st.session_state and st.session_state[reject_id]):
                 processed_alerts_exist = True
                 break
-        
+
         if processed_alerts_exist:
             if st.button("Remove Processed Alerts", key="clear_processed_alerts"):
                 # Filter out processed alerts
@@ -1810,7 +1765,7 @@ with tab3:
                 for alert in st.session_state.pending_alerts:
                     alert_id = f"confirmed_{alert['id']}"
                     reject_id = f"rejected_{alert['id']}"
-                    
+
                     if ((alert_id in st.session_state and st.session_state[alert_id]) or 
                         (reject_id in st.session_state and st.session_state[reject_id])):
                         # Skip this alert (it's been processed)
@@ -1818,14 +1773,14 @@ with tab3:
                     else:
                         # Keep this alert
                         new_pending_alerts.append(alert)
-                
+
                 st.session_state.pending_alerts = new_pending_alerts
                 st.success("Processed alerts removed from the queue.")
                 st.rerun()
-    
+
     # Alert history section
     st.subheader("Alert History & Analysis")
-    
+
     # Create history dataframe
     if st.session_state.alert_history or st.session_state.processed_alerts:
         # Combine processed alerts and alert history, prioritizing processed ones
@@ -1833,7 +1788,7 @@ with tab3:
         unique_alerts = st.session_state.processed_alerts + [
             a for a in st.session_state.alert_history if a['id'] not in processed_ids
         ]
-        
+
         history_data = []
         for alert in unique_alerts:
             history_data.append({
@@ -1845,15 +1800,15 @@ with tab3:
                 'Status': alert.get('status', 'pending'),
                 'Description': alert['description']
             })
-        
+
         if history_data:
             history_df = pd.DataFrame(history_data)
-            
+
             # Convert timestamp to datetime for sorting
             if 'Timestamp' in history_df.columns:
                 history_df['Timestamp'] = pd.to_datetime(history_df['Timestamp'])
                 history_df = history_df.sort_values('Timestamp', ascending=False)
-            
+
             # Color-code status
             def color_status(val):
                 colors = {
@@ -1863,7 +1818,7 @@ with tab3:
                     'pending': 'background-color: #e6e6e6'
                 }
                 return colors.get(val, '')
-            
+
             # Color-code severity
             def color_severity(val):
                 colors = {
@@ -1873,10 +1828,10 @@ with tab3:
                     'Low': 'background-color: #fdd835'
                 }
                 return colors.get(val, '')
-            
+
             # Convert timestamp back to string for display
             history_df['Timestamp'] = history_df['Timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
-            
+
             # Show styled dataframe
             st.dataframe(
                 history_df.style
@@ -1893,15 +1848,15 @@ with tab3:
 # Tab 4: Analytics & Model Training
 with tab4:
     st.header("Security Analytics & Model Management")
-    
+
     # Main tabs for the analytics section
     analytics_tab1, analytics_tab2, analytics_tab3 = st.tabs([
         "📊 Model Metrics", "🧠 Model Training", "🔄 Feedback Analysis"
     ])
-    
+
     with analytics_tab1:
         st.subheader("Model Performance Metrics")
-        
+
         # Create a card-like container for the model info
         st.markdown("""
         <div class="model-card">
@@ -1912,10 +1867,10 @@ with tab4:
             </div>
         </div>
         """, unsafe_allow_html=True)
-        
+
         # Model metrics display
         metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
-        
+
         with metrics_col1:
             st.markdown(f"""
             <div class="metric-container">
@@ -1923,7 +1878,7 @@ with tab4:
                 <div class="metric-value">{st.session_state.model_metrics['accuracy']:.2f}</div>
             </div>
             """, unsafe_allow_html=True)
-            
+
         with metrics_col2:
             st.markdown(f"""
             <div class="metric-container">
@@ -1931,7 +1886,7 @@ with tab4:
                 <div class="metric-value">{st.session_state.model_metrics['precision']:.2f}</div>
             </div>
             """, unsafe_allow_html=True)
-            
+
         with metrics_col3:
             st.markdown(f"""
             <div class="metric-container">
@@ -1939,7 +1894,7 @@ with tab4:
                 <div class="metric-value">{st.session_state.model_metrics['recall']:.2f}</div>
             </div>
             """, unsafe_allow_html=True)
-            
+
         with metrics_col4:
             st.markdown(f"""
             <div class="metric-container">
@@ -1947,22 +1902,22 @@ with tab4:
                 <div class="metric-value">{st.session_state.model_metrics['f1']:.2f}</div>
             </div>
             """, unsafe_allow_html=True)
-        
+
         # Model performance visualization
         if st.session_state.model_metrics['training_iterations'] > 0:
             st.subheader("Model Performance Over Time")
-            
+
             # Create simulated historical data based on current metrics and improvement rate
             iterations = st.session_state.model_metrics['training_iterations']
             current_accuracy = st.session_state.model_metrics['accuracy']
             current_precision = st.session_state.model_metrics['precision']
             current_recall = st.session_state.model_metrics['recall']
-            
+
             # Start with baseline values
             baseline_accuracy = max(0.65, current_accuracy - (0.05 * iterations))
             baseline_precision = max(0.60, current_precision - (0.05 * iterations))
             baseline_recall = max(0.55, current_recall - (0.05 * iterations))
-            
+
             # Generate history data
             history_data = []
             for i in range(iterations + 1):
@@ -1979,7 +1934,7 @@ with tab4:
                     # Values after each retraining
                     prev = history_data[-1]
                     improvement_factor = 1 - (0.7 ** i)  # Diminishing returns
-                    
+
                     history_data.append({
                         'Iteration': i,
                         'Accuracy': prev['Accuracy'] + (current_accuracy - baseline_accuracy) * (improvement_factor / iterations),
@@ -1988,13 +1943,13 @@ with tab4:
                         'False Positive Rate': max(st.session_state.model_metrics['false_positive_rate'],
                                                 prev['False Positive Rate'] * (1 - 0.2 * improvement_factor))
                     })
-            
+
             # Convert to dataframe
             history_df = pd.DataFrame(history_data)
-            
+
             # Create performance chart
             metrics_chart_tab1, metrics_chart_tab2 = st.tabs(["Performance Metrics", "False Positive Rate"])
-            
+
             with metrics_chart_tab1:
                 # Melt dataframe for plotting multiple metrics
                 plot_df = pd.melt(
@@ -2004,7 +1959,7 @@ with tab4:
                     var_name='Metric', 
                     value_name='Value'
                 )
-                
+
                 fig = px.line(
                     plot_df,
                     x='Iteration',
@@ -2018,7 +1973,7 @@ with tab4:
                     },
                     title='Model Performance Metrics Over Retraining Iterations'
                 )
-                
+
                 fig.update_layout(
                     height=400,
                     yaxis_range=[0.5, 1.0],
@@ -2027,9 +1982,9 @@ with tab4:
                     legend_title="",
                     hovermode="x unified"
                 )
-                
+
                 st.plotly_chart(fig, use_container_width=True)
-            
+
             with metrics_chart_tab2:
                 fig = px.line(
                     history_df,
@@ -2039,7 +1994,7 @@ with tab4:
                     color_discrete_sequence=['#E53935'],
                     title='False Positive Rate Reduction Over Retraining Iterations'
                 )
-                
+
                 fig.update_layout(
                     height=400,
                     yaxis_range=[0, 0.5],
@@ -2047,23 +2002,23 @@ with tab4:
                     yaxis_title="False Positive Rate",
                     hovermode="x unified"
                 )
-                
+
                 st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Model performance history will be displayed after retraining.")
-    
+
     with analytics_tab2:
         st.subheader("Model Training Management")
-        
+
         # Split into two columns
         train_col1, train_col2 = st.columns([3, 2])
-        
+
         with train_col1:
             # Last trained info with styled component
             if st.session_state.model_metrics['last_retrained']:
                 last_trained = st.session_state.model_metrics['last_retrained'].strftime('%Y-%m-%d %H:%M:%S')
                 training_iterations = st.session_state.model_metrics['training_iterations']
-                
+
                 st.markdown(f"""
                 <div class="model-card">
                     <div class="model-card-header">Model Training Status</div>
@@ -2084,12 +2039,12 @@ with tab4:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-            
+
             # Retraining recommendations
             if len(st.session_state.feedback_data) > 5:
                 pending_feedback = len(st.session_state.feedback_data)
                 last_trained_time = st.session_state.model_metrics.get('last_retrained')
-                
+
                 if last_trained_time is None or (datetime.now() - last_trained_time).total_seconds() > 300:
                     st.success(f"✅ Retraining recommended: {pending_feedback} feedback items available")
                 else:
@@ -2097,13 +2052,13 @@ with tab4:
             else:
                 needed_feedback = max(0, 5 - len(st.session_state.feedback_data))
                 st.warning(f"⚠️ Need {needed_feedback} more feedback items before retraining")
-            
+
             # Training dataset info
             st.subheader("Training Dataset")
-            
+
             # Simulated dataset composition
             dataset_col1, dataset_col2 = st.columns(2)
-            
+
             with dataset_col1:
                 st.markdown("""
                 #### Initial Dataset
@@ -2112,7 +2067,7 @@ with tab4:
                 - **Malicious Samples**: 2,500 (25%)
                 - **Attack Types**: Port scans, DDoS, Brute force, Data exfiltration
                 """)
-            
+
             with dataset_col2:
                 st.markdown(f"""
                 #### Feedback Dataset
@@ -2121,13 +2076,13 @@ with tab4:
                 - **False Positives**: {st.session_state.stats.get('alerts_rejected', 0)}
                 - **Balance Ratio**: {st.session_state.stats.get('alerts_confirmed', 0) / max(1, len(st.session_state.feedback_data)):.2f}
                 """)
-        
+
         with train_col2:
             # Training controls
             st.markdown("""
             ### Model Training Controls
             """)
-            
+
             # Initialize model button with nice styling
             if not st.session_state.model_initialized:
                 st.markdown("""
@@ -2138,16 +2093,16 @@ with tab4:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-                
+
                 if st.button("Initialize Model", key="init_model", type="primary"):
                     with st.spinner("Initializing model with default dataset..."):
                         # Simulate initialization delay
                         time.sleep(3)
-                        
+
                         # Mark model as initialized
                         st.session_state.model_initialized = True
                         st.success("✅ Model successfully initialized with default dataset!")
-            
+
             # Retrain model button with info
             st.markdown("""
             <div class="model-card">
@@ -2157,33 +2112,33 @@ with tab4:
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            
+
             retrain_button = st.button(
                 "Retrain Model with Feedback", 
                 key="retrain_model", 
                 type="primary",
                 disabled=len(st.session_state.feedback_data) < 5
             )
-            
+
             if retrain_button:
                 with st.spinner("Retraining model with admin feedback..."):
                     # Simulate model training delay
                     time.sleep(2)
-                    
+
                     # Update model metrics to show improvement
                     current_metrics = st.session_state.model_metrics
-                    
+
                     # Calculate improvement factors based on amount of feedback
                     feedback_amount = len(st.session_state.feedback_data)
                     max_improvement = min(0.15, 0.02 * feedback_amount)  # Cap at 15% improvement
-                    
+
                     # Increase metrics with diminishing returns
                     accuracy_improvement = max_improvement * (1 - current_metrics['accuracy'])
                     precision_improvement = max_improvement * (1 - current_metrics['precision'])
                     recall_improvement = max_improvement * (1 - current_metrics['recall'])
                     f1_improvement = max_improvement * (1 - current_metrics['f1'])
                     fpr_reduction = current_metrics['false_positive_rate'] * max_improvement
-                    
+
                     # Update metrics
                     st.session_state.model_metrics.update({
                         "accuracy": min(0.99, current_metrics['accuracy'] + accuracy_improvement),
@@ -2195,17 +2150,17 @@ with tab4:
                         "improvement_rate": max_improvement,
                         "last_retrained": datetime.now()
                     })
-                    
+
                     # Mark model as retrained
                     st.session_state.model_retrained = True
                     st.session_state.retraining_needed = False
-                    
+
                     # Clear some of the feedback data (but keep the most recent ones)
                     if len(st.session_state.feedback_data) > 10:
                         st.session_state.feedback_data = st.session_state.feedback_data[-10:]
-                    
+
                     st.success("✅ Model successfully retrained with admin feedback!")
-            
+
             # Advanced settings accordion
             with st.expander("Advanced Model Settings"):
                 st.slider("Learning Rate", 0.001, 0.1, 0.01, format="%.3f")
@@ -2213,7 +2168,7 @@ with tab4:
                 st.slider("Epochs", 1, 50, 10)
                 st.checkbox("Use Early Stopping", value=True)
                 st.checkbox("Apply Data Augmentation", value=False)
-            
+
             # DPI settings card
             st.markdown("""
             <div class="model-card">
@@ -2223,25 +2178,25 @@ with tab4:
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            
+
             dpi_enabled = st.toggle("Enable Deep Packet Inspection", value=True, key="dpi_enabled")
-            
+
             if dpi_enabled:
                 st.success("DPI engine is active and analyzing packet payloads")
             else:
                 st.warning("DPI engine is disabled. Only header analysis will be performed.")
-    
+
     with analytics_tab3:
         st.subheader("Admin Feedback Analysis")
-        
+
         # Feedback summary
         feedback_confirmed = st.session_state.stats.get('alerts_confirmed', 0)
         feedback_rejected = st.session_state.stats.get('alerts_rejected', 0)
         total_feedback = feedback_confirmed + feedback_rejected
-        
+
         if total_feedback > 0:
             feedback_col1, feedback_col2, feedback_col3 = st.columns(3)
-            
+
             with feedback_col1:
                 st.markdown(f"""
                 <div class="metric-container">
@@ -2249,7 +2204,7 @@ with tab4:
                     <div class="metric-value">{total_feedback}</div>
                 </div>
                 """, unsafe_allow_html=True)
-            
+
             with feedback_col2:
                 st.markdown(f"""
                 <div class="metric-container">
@@ -2257,7 +2212,7 @@ with tab4:
                     <div class="metric-value">{feedback_confirmed}</div>
                 </div>
                 """, unsafe_allow_html=True)
-            
+
             with feedback_col3:
                 st.markdown(f"""
                 <div class="metric-container">
@@ -2265,15 +2220,15 @@ with tab4:
                     <div class="metric-value">{feedback_rejected}</div>
                 </div>
                 """, unsafe_allow_html=True)
-            
+
             # Feedback distribution chart
             st.subheader("Feedback Distribution")
-            
+
             feedback_df = pd.DataFrame([
                 {'Feedback Type': 'Confirmed Threats', 'Count': feedback_confirmed},
                 {'Feedback Type': 'False Positives', 'Count': feedback_rejected}
             ])
-            
+
             fig = px.pie(
                 feedback_df,
                 values='Count',
@@ -2285,18 +2240,18 @@ with tab4:
                 },
                 hole=0.4
             )
-            
+
             fig.update_layout(height=350)
             st.plotly_chart(fig, use_container_width=True)
-            
+
             # Feedback impact analysis
             st.subheader("Feedback Impact on Model")
-            
+
             # Create simulated impact data
             if st.session_state.model_metrics['training_iterations'] > 0:
                 # Show model improvement from feedback
                 current_metrics = st.session_state.model_metrics
-                
+
                 metrics_improvement = {
                     'Metric': ['Accuracy', 'Precision', 'Recall', 'F1 Score'],
                     'Before': [
@@ -2312,16 +2267,16 @@ with tab4:
                         current_metrics['f1']
                     ]
                 }
-                
+
                 # Calculate improvement
                 metrics_improvement['Improvement'] = [
                     metrics_improvement['After'][i] - metrics_improvement['Before'][i]
                     for i in range(len(metrics_improvement['Metric']))
                 ]
-                
+
                 # Create dataframe
                 imp_df = pd.DataFrame(metrics_improvement)
-                
+
                 # Show table
                 st.dataframe(
                     imp_df.style.format({
@@ -2331,7 +2286,7 @@ with tab4:
                     }),
                     use_container_width=True
                 )
-                
+
                 # Show bar chart of improvement
                 fig = px.bar(
                     imp_df,
@@ -2340,18 +2295,18 @@ with tab4:
                     title='Model Improvement from Admin Feedback',
                     color_discrete_sequence=['#4CAF50']
                 )
-                
+
                 fig.update_layout(height=350)
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info("Feedback impact analysis will be available after model retraining.")
         else:
             st.info("No feedback data available yet. Provide feedback on alerts to see analysis.")
-    
-    
+
+
     # Model performance visualization
     st.subheader("Model Performance History")
-    
+
     # If model has been retrained, show a performance improvement chart
     if st.session_state.model_metrics['training_iterations'] > 0:
         # Create simulated historical data based on current metrics and improvement rate
@@ -2359,12 +2314,12 @@ with tab4:
         current_accuracy = st.session_state.model_metrics['accuracy']
         current_precision = st.session_state.model_metrics['precision']
         current_recall = st.session_state.model_metrics['recall']
-        
+
         # Start with baseline values
         baseline_accuracy = max(0.65, current_accuracy - (0.05 * iterations))
         baseline_precision = max(0.60, current_precision - (0.05 * iterations))
         baseline_recall = max(0.55, current_recall - (0.05 * iterations))
-        
+
         # Generate history data
         history_data = []
         for i in range(iterations + 1):
@@ -2381,7 +2336,7 @@ with tab4:
                 # Values after each retraining
                 prev = history_data[-1]
                 improvement_factor = 1 - (0.7 ** i)  # Diminishing returns
-                
+
                 history_data.append({
                     'Iteration': i,
                     'Accuracy': prev['Accuracy'] + (current_accuracy - baseline_accuracy) * (improvement_factor / iterations),
@@ -2390,13 +2345,13 @@ with tab4:
                     'False Positive Rate': max(st.session_state.model_metrics['false_positive_rate'],
                                              prev['False Positive Rate'] * (1 - 0.2 * improvement_factor))
                 })
-        
+
         # Convert to dataframe
         history_df = pd.DataFrame(history_data)
-        
+
         # Create performance chart
         metrics_tab1, metrics_tab2 = st.tabs(["Performance Metrics", "False Positive Rate"])
-        
+
         with metrics_tab1:
             # Melt dataframe for plotting multiple metrics
             plot_df = pd.melt(
@@ -2404,9 +2359,9 @@ with tab4:
                 id_vars=['Iteration'], 
                 value_vars=['Accuracy', 'Precision', 'Recall'],
                 var_name='Metric', 
-                value_name='Value'
+                value_name='Value```python
             )
-            
+
             fig = px.line(
                 plot_df,
                 x='Iteration',
@@ -2420,7 +2375,7 @@ with tab4:
                 },
                 title='Model Performance Metrics Over Retraining Iterations'
             )
-            
+
             fig.update_layout(
                 height=400,
                 yaxis_range=[0.5, 1.0],
@@ -2429,9 +2384,9 @@ with tab4:
                 legend_title="",
                 hovermode="x unified"
             )
-            
+
             st.plotly_chart(fig, use_container_width=True)
-        
+
         with metrics_tab2:
             fig = px.line(
                 history_df,
@@ -2441,7 +2396,7 @@ with tab4:
                 color_discrete_sequence=['#E53935'],
                 title='False Positive Rate Reduction Over Retraining Iterations'
             )
-            
+
             fig.update_layout(
                 height=400,
                 yaxis_range=[0, 0.5],
@@ -2449,15 +2404,15 @@ with tab4:
                 yaxis_title="False Positive Rate",
                 hovermode="x unified"
             )
-            
+
             st.plotly_chart(fig, use_container_width=True)
     else:
         # Show placeholder for model performance
         st.info("No model retraining history available yet. Retrain the model to see performance metrics.")
-    
+
     # Overall statistics
     st.subheader("Security Overview")
-    
+
     # Calculate statistics
     total_packets = st.session_state.stats['total_packets']
     malicious_packets = st.session_state.stats['malicious_packets']
@@ -2465,15 +2420,15 @@ with tab4:
     total_alerts = st.session_state.stats['alerts_generated']
     confirmed_alerts = st.session_state.stats['alerts_confirmed']
     rejected_alerts = st.session_state.stats['alerts_rejected']
-    
+
     malicious_ratio = malicious_packets / total_packets if total_packets > 0 else 0
     alert_ratio = total_alerts / total_packets if total_packets > 0 else 0
     false_positive_ratio = rejected_alerts / total_alerts if total_alerts > 0 else 0
     true_positive_ratio = confirmed_alerts / total_alerts if total_alerts > 0 else 0
-    
+
     # Create gauge charts for key metrics
     analytics_col1, analytics_col2, analytics_col3 = st.columns(3)
-    
+
     with analytics_col1:
         # Malicious traffic gauge
         fig = go.Figure(go.Indicator(
@@ -2496,10 +2451,10 @@ with tab4:
                 }
             }
         ))
-        
+
         fig.update_layout(height=300, margin=dict(l=20, r=20, t=70, b=20))
         st.plotly_chart(fig, use_container_width=True)
-    
+
     with analytics_col2:
         # Alert ratio gauge
         fig = go.Figure(go.Indicator(
@@ -2522,10 +2477,10 @@ with tab4:
                 }
             }
         ))
-        
+
         fig.update_layout(height=300, margin=dict(l=20, r=20, t=70, b=20))
         st.plotly_chart(fig, use_container_width=True)
-    
+
     with analytics_col3:
         # False positive ratio gauge
         fig = go.Figure(go.Indicator(
@@ -2548,15 +2503,15 @@ with tab4:
                 }
             }
         ))
-        
+
         fig.update_layout(height=300, margin=dict(l=20, r=20, t=70, b=20))
         st.plotly_chart(fig, use_container_width=True)
-    
+
     # Protocol and port statistics
     st.subheader("Protocol & Service Analysis")
-    
+
     proto_col1, proto_col2 = st.columns(2)
-    
+
     with proto_col1:
         # Protocol distribution
         protocol_data = []
@@ -2567,10 +2522,10 @@ with tab4:
                     'Count': count,
                     'Percentage': (count / total_packets * 100) if total_packets > 0 else 0
                 })
-        
+
         if protocol_data:
             protocol_df = pd.DataFrame(protocol_data)
-            
+
             fig = px.bar(
                 protocol_df,
                 x='Protocol',
@@ -2579,12 +2534,12 @@ with tab4:
                 color_discrete_sequence=px.colors.qualitative.Bold,
                 title='Protocol Distribution'
             )
-            
+
             fig.update_layout(height=350)
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No protocol data available yet.")
-    
+
     with proto_col2:
         # Top ports
         port_data = []
@@ -2595,19 +2550,19 @@ with tab4:
                 'Service': service,
                 'Count': count
             })
-        
+
         if port_data:
             port_df = pd.DataFrame(port_data)
-            
+
             # Sort and get top ports
             port_df = port_df.sort_values('Count', ascending=False).head(10)
-            
+
             # Create label with port and service
             port_df['Label'] = port_df.apply(
                 lambda x: f"{x['Port']} ({x['Service']})" if x['Service'] != 'Unknown' else str(x['Port']),
                 axis=1
             )
-            
+
             fig = px.bar(
                 port_df,
                 x='Label',
@@ -2616,20 +2571,20 @@ with tab4:
                 color_discrete_sequence=px.colors.qualitative.Plotly,
                 title='Top 10 Ports'
             )
-            
+
             fig.update_layout(height=350, xaxis_title="Port (Service)")
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No port data available yet.")
-    
+
     # Threat insights
     st.subheader("Threat Classification Insights")
-    
+
     # Create attack type distribution visualization
     attack_types = {}
     for alert in st.session_state.alert_history:
         description = alert.get('description', 'Unknown')
-        
+
         # Simplified attack categorization based on description
         if 'port scan' in description.lower():
             category = 'Port Scan'
@@ -2649,19 +2604,19 @@ with tab4:
             category = 'C&C Communication'
         else:
             category = 'Other'
-        
+
         if category in attack_types:
             attack_types[category] += 1
         else:
             attack_types[category] = 1
-    
+
     # Display attack type distribution
     if attack_types:
         attack_df = pd.DataFrame([
             {'Attack Type': category, 'Count': count}
             for category, count in attack_types.items()
         ])
-        
+
         fig = px.pie(
             attack_df,
             values='Count',
@@ -2670,27 +2625,27 @@ with tab4:
             color_discrete_sequence=px.colors.sequential.RdBu,
             hole=0.4
         )
-        
+
         fig.update_layout(height=400)
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No threat classification data available yet.")
-    
+
     # Display feedback statistics for model learning
     st.subheader("Model Learning & Feedback")
-    
+
     if st.session_state.feedback_data:
         # Count feedback by label
         confirmed_count = sum(1 for item in st.session_state.feedback_data if item['label'] == 1)
         rejected_count = sum(1 for item in st.session_state.feedback_data if item['label'] == 0)
-        
+
         feedback_df = pd.DataFrame([
             {'Feedback Type': 'Confirmed Threats', 'Count': confirmed_count},
             {'Feedback Type': 'False Positives', 'Count': rejected_count}
         ])
-        
+
         feedback_col1, feedback_col2 = st.columns(2)
-        
+
         with feedback_col1:
             fig = px.bar(
                 feedback_df,
@@ -2703,10 +2658,10 @@ with tab4:
                 },
                 title='Admin Feedback Distribution'
             )
-            
+
             fig.update_layout(height=350)
             st.plotly_chart(fig, use_container_width=True)
-        
+
         with feedback_col2:
             # Model improvement simulation based on feedback
             if len(st.session_state.feedback_data) >= 5:
@@ -2715,21 +2670,21 @@ with tab4:
                 accuracy_start = 0.75
                 max_improvement = 0.2
                 improvement_rate = 0.05
-                
+
                 improvement = max_improvement * (1 - math.exp(-improvement_rate * num_feedback))
                 accuracy_values = [accuracy_start]
                 feedback_counts = [0]
-                
+
                 for i in range(1, num_feedback + 1, max(1, num_feedback // 10)):
                     improvement_i = max_improvement * (1 - math.exp(-improvement_rate * i))
                     accuracy_values.append(accuracy_start + improvement_i)
                     feedback_counts.append(i)
-                
+
                 learning_df = pd.DataFrame({
                     'Feedback Count': feedback_counts,
                     'Accuracy': accuracy_values
                 })
-                
+
                 fig = px.line(
                     learning_df,
                     x='Feedback Count',
@@ -2738,18 +2693,18 @@ with tab4:
                     title='Model Learning Curve',
                     color_discrete_sequence=['#4CAF50']
                 )
-                
+
                 fig.update_layout(
                     height=350,
                     yaxis_range=[0.7, 1.0]
                 )
-                
+
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info("More feedback data is needed to show learning curve (at least 5 feedback items required).")
     else:
         st.info("No feedback data available yet. Provide feedback on alerts to help train the model.")
-    
+
     # Reset statistics button for testing
     if st.button("Reset Statistics (For Testing Only)", key="reset_stats"):
         # Reset statistics
@@ -2766,14 +2721,14 @@ with tab4:
             'top_destinations': {},
             'port_distribution': {},
         }
-        
+
         # Clear history
         st.session_state.detection_history = []
         st.session_state.alert_history = []
         st.session_state.pending_alerts = []
         st.session_state.processed_alerts = []
         st.session_state.feedback_data = []
-        
+
         st.success("Statistics and history reset successfully.")
         st.rerun()
 
